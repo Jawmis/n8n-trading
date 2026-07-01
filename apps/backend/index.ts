@@ -1,9 +1,15 @@
 import express from 'express';
+import mongoose from 'mongoose';
+import { UserModel } from 'db/client';
+
+mongoose.connect(process.env.MONGO_URL!);
 
 const app = express();
 
 app.post("/signup", (req, res) => {
-    
+    UserModel.create({
+
+    })
 });
 
 app.post("/signin", (req, res) => {
