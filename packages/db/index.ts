@@ -5,7 +5,8 @@ import mongoose, { Schema } from "mongoose";
 const UserSchema = new Schema({
     username: {
         type: String,
-        required: true
+        required: true,
+        unique : true
     },
     password: {
         type: String,
@@ -133,4 +134,4 @@ const ExecutionSchema = new Schema({
 export const UserModel = mongoose.model("Users", UserSchema);
 export const WorkflowModel = mongoose.model("Workflows", WorkflowSchema);
 export const NodesModel = mongoose.model("Nodes", NodesSchema);
-export const ExectionModel = mongoose.model("Executions", ExecutionSchema);
+export const ExecutionModel = mongoose.model("Executions", ExecutionSchema);
