@@ -125,9 +125,18 @@ app.put("/workflow/:workflowId", authMiddleware,async(req, res) => {
 
 });
 
-app.get("/workflow/:workflowId",authMiddleware, async (req, res) => {
+app.get("/workflows", authMiddleware, async (req, res) => {
+    const workflows = await WorkflowModel.find({
+        userId: req.userId
+    });
+    res.json(workflows);
+});
+
+app.get("/workflow/:workflowId", authMiddleware, async (req, res) => {
+    
+    //to : make sure the workflow belongs to the user
     const workflow = await WorkflowModel.findById(req.params.workflowId);
-    if (!workflow) {
+    if (!workflow || workflow.userId.toString() !== req.userId) {
         res.status(404).json({
             message: "Workflow not found"
         })
@@ -148,4 +157,3 @@ app.get("/nodes", async (req, res) => {
     res.json(nodes)
 })
 app.listen(process.env.PORT || 3000);
-
