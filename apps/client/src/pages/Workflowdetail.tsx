@@ -13,6 +13,7 @@ import {
 } from '@xyflow/react';
 import { apiGetWorkflow, apiUpdateWorkflow, type Workflow } from '@/lib/http';
 
+
 export default function WorkflowDetail() {
   const { workflowId } = useParams<{ workflowId: string }>();
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
