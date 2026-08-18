@@ -27,13 +27,8 @@ app.post("/signup", async (req, res) => {
             password: data.password
         }) 
         
-        const token = jwt.sign({
-            id: user._id
-        }, JWT_SECRET);
-
         res.json({
             id: user._id,
-            token
         })
     } catch (e) {
         res.status(411).json({
@@ -57,8 +52,14 @@ app.post("/signin", async (req, res) => {
         })
         if (user) {
             // return the user their jwt or token.
+             
+        const token = jwt.sign({
+            id: user._id
+        }, JWT_SECRET);
+
             res.json({
-                id : user._id
+                id: user._id,
+                token
             })
         } else {
           res.status(403).json({
