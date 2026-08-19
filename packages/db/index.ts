@@ -1,5 +1,4 @@
 
-import { request } from "http";
 import mongoose, { Schema } from "mongoose"; 
 
 const UserSchema = new Schema({
@@ -33,6 +32,23 @@ const NodeDataSchema = new Schema({
         type : String,
         enum: ["ACTION", "TRIGGER"]},
         metadata : Schema.Types.Mixed
+}, {
+    _id : false
+})
+
+const MetadataSchema = new Schema({
+    kind: {
+        type: String, enum: ["string", "number", "boolean", "select"]
+    },
+    title: {
+        type: String,
+        required : true
+    },
+    description: {
+        type: String,
+        required: true
+    },
+    values : [Schema.Types.Mixed]
 }, {
     _id : false
 })
