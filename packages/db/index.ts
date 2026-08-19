@@ -66,8 +66,8 @@ const WorkflowNodeSchema = new Schema({
         type: mongoose.Types.ObjectId,
         ref : 'Nodes'
     },
-    data: {NodeDataSchema
-    }
+    data: NodeDataSchema
+    
 }, {
     _id : false
 })
