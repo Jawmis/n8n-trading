@@ -4,12 +4,18 @@ import { ExecutionModel, NodesModel, UserModel, WorkflowModel } from 'db/client'
 import jwt from "jsonwebtoken"; 
 import { SignupSchema,SigninSchema, CreateWorkflowSchema, UpdateWorkflowSchema } from 'common/types';
 import { authMiddleware } from './middleware';
+import cors from 'cors';
 
 mongoose.connect(process.env.MONGO_URL!);
 
 const app = express();
 
 app.use(express.json());
+
+app.use(cors({
+    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    credentials: true,
+}));
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
