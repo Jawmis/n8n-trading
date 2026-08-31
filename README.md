@@ -29,6 +29,27 @@ These are delivery and maintainability metrics, not a claimed runtime-speed
 benchmark. Runtime performance improvements should be measured separately with
 representative workflow and database benchmarks.
 
+## Estimated automation impact
+
+These figures are scenario-based estimates until production execution history
+is available:
+
+| Scenario | Calculation | Estimated impact |
+| --- | --- | ---: |
+| Manual trade check replaced by a timer workflow | 5 min/check × 12 checks/day × 22 workdays | 22 hours saved/month |
+| Three independent action branches executed in parallel | 9 sec sequential ÷ 4 sec parallel | 56% lower elapsed execution time |
+| Workflow launch overhead | 2 sec polling interval ÷ 60 | Up to 2 sec trigger wait |
+
+For measured results after deployment:
+
+```text
+time saved = (manual execution time - automated execution time) × successful runs
+```
+
+The estimates assume a five-minute manual check, twelve checks per workday,
+twenty-two workdays per month, and branch durations of 3, 4, and 2 seconds.
+They are projections, not measured performance claims.
+
 This Turborepo starter is maintained by the Turborepo core team.
 
 ## Using this example
