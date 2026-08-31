@@ -96,7 +96,10 @@ const WorkflowSchema = new Schema({
         ref: 'Users'
     },
     nodes: [WorkflowNodeSchema],
-    edges : [EdgesSchema]
+    edges : [EdgesSchema],
+    runRequestedAt: {
+        type: Date
+    }
 });
 
 const CredentialsTypeSchema = new Schema({
@@ -135,7 +138,7 @@ const ExecutionSchema = new Schema({
     },
     status: {
         type: String,
-        enum : ["PENDING", "SUCCESS", "FAILURE"]
+        enum : ["pending", "success", "failure", "PENDING", "SUCCESS", "FAILURE"]
     },
     startTime: {
         type: Date,
@@ -144,6 +147,9 @@ const ExecutionSchema = new Schema({
     },
     endTime: {
         type: Date
+    },
+    error: {
+        type: String
     }
 })
 

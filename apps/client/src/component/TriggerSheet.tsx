@@ -1,16 +1,13 @@
 import type { NodeKind, NodeMetadata } from "./CreateWorkflow";
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import {
     Sheet,
-    SheetClose,
     SheetContent,
     SheetDescription,
     SheetFooter,
     SheetHeader,
     SheetTitle,
-    SheetTrigger,
 } from "@/components/ui/sheet";
 
 import {
@@ -18,13 +15,11 @@ import {
     SelectContent,
     SelectGroup,
     SelectItem,
-    SelectLabel,
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
 import { useState } from "react";
-import type { PriceTriggerMetadata } from "common/types";
-import type { TimerNodeMetadata } from "common/types";
+import { SUPPORTED_ASSETS } from "common/types";
 
 
 
@@ -48,7 +43,7 @@ export const TriggerSheet = ({
 }
 ) => {
     // creating a state variable 
-    const [metadeta, setMetadata] = useState<PriceTriggerMetadata | TimerNodeMetadata>({
+    const [metadeta, setMetadata] = useState<any>({
         time: 3600
     });
     const [selectedTrigger, setSelectedTrigger] = useState(SUPPORTED_TRIGGERS[0].id);
@@ -80,7 +75,7 @@ export const TriggerSheet = ({
                 </div>
                 {selectedTrigger === "timer" && <div className="space-y-2 rounded-lg border border-border p-4">
                     <div className="text-sm font-medium">Number of seconds</div>
-                     <Input value={metadeta.time} onChange={(e) => setMetadata(metadeta => ({
+                     <Input value={metadeta.time} onChange={(e) => setMetadata((metadeta: any) => ({
                             ...metadeta,
                             time : Number(e.target.value)
                         }))}></Input>
@@ -89,14 +84,14 @@ export const TriggerSheet = ({
                 {selectedTrigger === "price-trigger" && <div className="space-y-4 rounded-lg border border-border p-4">
                     <div className="space-y-2">
                         <div className="text-sm font-medium">Price</div>
-                        <Input type="text" onChange={(e) => setMetadata(m => ({
+                        <Input type="text" onChange={(e) => setMetadata((m: any) => ({
                             ...m,
                             price: Number(e.target.value)
                         }))}></Input>
                     </div>
                     <div className="space-y-2">
                         <div className="text-sm font-medium">Asset</div>
-                        <Select value={metadeta.asset} onValueChange={(value) => setMetadata(metadeta => ({
+                        <Select value={metadeta.asset} onValueChange={(value) => setMetadata((metadeta: any) => ({
                             ...metadeta,
                             asset: value
                         }))}>
@@ -118,8 +113,8 @@ export const TriggerSheet = ({
             <SheetFooter className="mt-6">
                 <Button onClick={() => {
                     onSelect(
-                        selectedTrigger,
-                        metadeta
+                        selectedTrigger as NodeKind,
+                        metadeta as NodeMetadata
                     )
                 }} type="submit" className="w-full">Create Trigger</Button>
 
@@ -128,6 +123,3 @@ export const TriggerSheet = ({
     </Sheet>
 
 }
-
-
-

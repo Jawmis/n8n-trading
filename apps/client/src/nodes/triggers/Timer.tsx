@@ -2,11 +2,10 @@ import { Handle, Position } from "@xyflow/react";
 import type { TimerNodeMetadata } from "common/types";
 
 
-export function Timer({ data, isConnectable }: {
+export function Timer({ data }: {
     data: {
         metadata : TimerNodeMetadata
     },
-    isConnectable : boolean
 }) {
     return <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Timer Trigger</div>

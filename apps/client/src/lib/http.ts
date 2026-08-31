@@ -71,6 +71,11 @@ export async function apiUpdateWorkflow(workflowId: string, body: any): Promise<
   return res.data;
 }
 
+export async function apiExecuteWorkflow(workflowId: string): Promise<{ message: string }> {
+  const res = await api.post<{ message: string }>(`/workflow/${workflowId}/execute`);
+  return res.data;
+}
+
 export async function apiGetWorkflow(workflowId: string): Promise<Workflow> {
   const res = await api.get<Workflow>(`/workflow/${workflowId}`);
   return res.data;

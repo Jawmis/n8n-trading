@@ -131,6 +131,20 @@ app.put("/workflow/:workflowId", authMiddleware,async(req, res) => {
 
 });
 
+app.post("/workflow/:workflowId/execute", authMiddleware, async (req, res) => {
+    try {
+        const workflow = await WorkflowModel.findById(req.params.workflowId);
+        if (!workflow || workflow.userId.toString() !== req.userId) {
+            res.status(404).json({ message: "Workflow not found" });
+            return;
+        }
+        await WorkflowModel.updateOne({ _id: workflow._id }, { $set: { runRequestedAt: new Date() } });
+        res.json({ message: "Workflow queued for execution" });
+    } catch {
+        res.status(500).json({ message: "Failed to queue workflow" });
+    }
+});
+
 app.get("/workflows", authMiddleware, async (req, res) => {
     const workflows = await WorkflowModel.find({
         userId: req.userId

@@ -1,4 +1,7 @@
-# executor
+# Detached workflow executor
+
+The executor polls persisted workflows every two seconds and runs timer-triggered
+graphs. Set `MONGO_URL` before starting it.
 
 To install dependencies:
 
@@ -9,7 +12,9 @@ bun install
 To run:
 
 ```bash
-bun run index.ts
+bun run dev
 ```
 
-This project was created using `bun init` in bun v1.4.0. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+Action handlers are injectable. Provide `globalThis.LIGHTER_CLIENT` with
+`getMarketPrice` and `placeOrder` implementations to connect a Lighter SDK.
+The executor never creates a live exchange client implicitly.

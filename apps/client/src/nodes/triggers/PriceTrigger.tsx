@@ -2,11 +2,10 @@ import { Handle, Position } from "@xyflow/react";
 import { type PriceTriggerMetadata } from "common/types";
 
 
-export function PriceTrigger({ data, isConnectable }: {
+export function PriceTrigger({ data }: {
     data: {
         metadata : PriceTriggerMetadata
     },
-    isConnectable : boolean
 }) {
     return <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Price Trigger</div>

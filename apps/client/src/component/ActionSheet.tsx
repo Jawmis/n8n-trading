@@ -1,16 +1,13 @@
 import type { NodeKind, NodeMetadata } from "./CreateWorkflow";
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import {
     Sheet,
-    SheetClose,
     SheetContent,
     SheetDescription,
     SheetFooter,
     SheetHeader,
     SheetTitle,
-    SheetTrigger,
 } from "@/components/ui/sheet";
 
 import {
@@ -18,14 +15,10 @@ import {
     SelectContent,
     SelectGroup,
     SelectItem,
-    SelectLabel,
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
 import { useState } from "react";
-import type { PriceTriggerMetadata } from "common/types";
-import type { TimerNodeMetadata } from "common/types";
-import type { TradingMetadata } from "common/types";
 import { SUPPORTED_ASSETS } from "common/types";
 
 
@@ -47,15 +40,19 @@ const SUPPORTED_ACTIONS = [{
 }]
 
 export const ActionSheet = ({
-    onSelect
+    onSelect,
+    onClose
 }: {
-    onSelect: (kind: NodeKind, metadata: NodeMetadata) => void
+    onSelect: (kind: NodeKind, metadata: NodeMetadata) => void,
+    onClose?: () => void
 }
 ) => {
     // creating a state variable 
-    const [metadeta, setMetadata] = useState<TradingMetadata | {}>({});
+    const [metadeta, setMetadata] = useState<any>({});
     const [selectedAction, setSelectedAction] = useState(SUPPORTED_ACTIONS[0].id);
-    return <Sheet open={true}>
+    return <Sheet open={true} onOpenChange={(open) => {
+        if (!open) onClose?.();
+    }}>
 
         <SheetContent className="sm:max-w-md">
             <SheetHeader>
@@ -84,7 +81,7 @@ export const ActionSheet = ({
                 {(selectedAction === "hyperliquid" || selectedAction === "lighter" || selectedAction === "backpack") && <div className="space-y-4 rounded-lg border border-border p-4">
                     <div className="space-y-2">
                         <div className="text-sm font-medium">Type</div>
-                        <Select value={metadeta.asset} onValueChange={(value) => setMetadata(metadeta => ({
+                        <Select value={metadeta.asset} onValueChange={(value) => setMetadata((metadeta: any) => ({
                                     ...metadeta,
                                     type: value
                         }))}>
@@ -105,7 +102,7 @@ export const ActionSheet = ({
                     
                     <div className="space-y-2">
                         <div className="text-sm font-medium">Symbol</div>
-                        <Select value={metadeta?.symbol} onValueChange={(value) => setMetadata(metadeta => ({
+                        <Select value={metadeta?.symbol} onValueChange={(value) => setMetadata((metadeta: any) => ({
                                     ...metadeta,
                                     symbol: value
                         }))}>
@@ -126,7 +123,7 @@ export const ActionSheet = ({
 
                     <div className="space-y-2">
                         <div className="text-sm font-medium">Qty</div>
-                        <Input value={metadeta.time} onChange={(e) => setMetadata(metadeta => ({
+                        <Input value={metadeta.time} onChange={(e) => setMetadata((metadeta: any) => ({
                             ...metadeta,
                             qty : Number(e.target.value)
                         }))}></Input>
@@ -137,8 +134,8 @@ export const ActionSheet = ({
             <SheetFooter className="mt-6">
                 <Button onClick={() => {
                     onSelect(
-                        selectedAction,
-                        metadeta
+                        selectedAction as NodeKind,
+                        metadeta as NodeMetadata
                     )
                 }} type="submit" className="w-full">Create Action</Button>
 
@@ -147,6 +144,3 @@ export const ActionSheet = ({
     </Sheet>
  
 }
-
-
-

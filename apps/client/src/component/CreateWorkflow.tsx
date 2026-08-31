@@ -56,6 +56,7 @@ export function CreateWorkflow() {
      
   } | null
     >(null);
+  const [showActionSheet, setShowActionSheet] = useState(false);
   const [showTriggerSheet, setShowTriggerSheet] = useState(true);
  
   const onNodesChange = useCallback(
@@ -75,8 +76,9 @@ export function CreateWorkflow() {
       if (!connectionInfo?.isValid) {
         setSelectAction({
           startingNodeId: connectionInfo.fromNode.id,
-          position: connectionInfo.from
+          position: connectionInfo.to ?? connectionInfo.from
         });
+        setShowActionSheet(true);
       }
     },
     [],
@@ -98,8 +100,12 @@ export function CreateWorkflow() {
         setNodes((currentNodes) => [...currentNodes, newNode]);
         setShowTriggerSheet(false);
       }} />}
-      {selectAction && <ActionSheet onSelect={(type, metadata) => {
+      {showActionSheet && <ActionSheet onClose={() => {
+        setShowActionSheet(false);
+        setSelectAction(null);
+      }} onSelect={(type, metadata) => {
         const nodeId = Math.random().toString();
+        const startingNodeId = selectAction?.startingNodeId;
 
         setNodes((currentNodes) => [...currentNodes, {
           id: nodeId,
@@ -108,26 +114,55 @@ export function CreateWorkflow() {
             kind: "action",
             metadata,
           },
-          position: selectAction.position
+          position: selectAction?.position ?? {
+            x: 120 + (currentNodes.length % 3) * 240,
+            y: 140 + Math.floor(currentNodes.length / 3) * 160,
+          }
         }]);
-        setEdges((currentEdges) => [...currentEdges, {
-          id: `${selectAction.startingNodeId} - ${nodeId}`,
-          source: selectAction.startingNodeId,
-          target: nodeId,
-        }]);
+        if (startingNodeId) {
+          setEdges((currentEdges) => [...currentEdges, {
+            id: `${startingNodeId} - ${nodeId}`,
+            source: startingNodeId,
+            target: nodeId,
+          }]);
+        }
         setSelectAction(null);
+        setShowActionSheet(false);
       }} />
       }
-      <ReactFlow
-        nodeTypes={nodeTypes}
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onConnectEnd={onConnectEnd}
-        fitView
-      />
+      <div className="relative h-full w-full">
+        <div className="absolute left-4 top-4 z-10 flex gap-2 rounded-md border bg-background p-2 shadow-sm">
+          <button
+            type="button"
+            onClick={() => {
+              setSelectAction(null);
+              setShowActionSheet(true);
+            }}
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+          >
+            + Add trade action
+          </button>
+          <span className="flex items-center px-2 text-xs text-muted-foreground">
+            Connect nodes by dragging from a handle
+          </span>
+        </div>
+        <ReactFlow
+          nodeTypes={nodeTypes}
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onConnectEnd={onConnectEnd}
+          onPaneClick={() => {
+            if (nodes.length > 0) {
+              setSelectAction(null);
+              setShowActionSheet(true);
+            }
+          }}
+          fitView
+        />
+      </div>
     </div>
   );
 
