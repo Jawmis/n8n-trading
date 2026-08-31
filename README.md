@@ -1,4 +1,33 @@
-# Turborepo starter
+# N8N Trading Automation Platform
+
+Visual crypto-trading workflow automation built with React Flow, Express,
+MongoDB/Mongoose, and a detached Bun executor service.
+
+## Project progress
+
+Measured from the first repository commit (`4684a8a`) through the current
+implementation (`23a18f4`):
+
+| Metric | First commit | Current | Change |
+| --- | ---: | ---: | ---: |
+| TypeScript files in `apps/` and `packages/` | 7 | 35 | +400% |
+| TypeScript lines in `apps/` and `packages/` | 324 | 2,065 | +537% |
+| Git commits | 1 | 18 | +17 |
+
+The implementation now includes the visual workflow builder, trigger and task
+drawers, workflow persistence, authenticated execution requests, execution
+history, recursive detached execution, and an injectable Lighter action handler.
+
+Validation currently passes with:
+
+```sh
+bun run build --filter=client
+bun run check-types
+```
+
+These are delivery and maintainability metrics, not a claimed runtime-speed
+benchmark. Runtime performance improvements should be measured separately with
+representative workflow and database benchmarks.
 
 This Turborepo starter is maintained by the Turborepo core team.
 
