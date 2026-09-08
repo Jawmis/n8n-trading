@@ -1,4 +1,5 @@
 import type { WorkflowNodeLike } from "../execute";
+import { validateTradeRisk } from "../risk";
 const assets = new Set(["SOL", "BTC", "ETH"]);
 export interface LighterOrder { asset: "SOL" | "BTC" | "ETH"; quantity: number; side: "long" | "short"; price?: number; apiKey: string; accountIndex: string | number; apiIndex: string | number; }
 export interface LighterClient { getMarketPrice(asset: string): Promise<{ price: number; priceDecimals?: number; quantityDecimals?: number }>; placeOrder(order: LighterOrder & { price: number }): Promise<unknown>; }
@@ -21,6 +22,9 @@ export async function executeLighter(node: WorkflowNodeLike, client?: LighterCli
   if (!exchange) throw new Error("No Lighter client configured (inject one or set globalThis.LIGHTER_CLIENT)");
   const market = await exchange.getMarketPrice(order.asset);
   if (!Number.isFinite(market.price) || market.price <= 0) throw new Error("Lighter returned an invalid market price");
+  const risk = validateTradeRisk(order, market.price);
   const round = (value: number, decimals: number) => Number(value.toFixed(decimals));
-  return exchange.placeOrder({ ...order, quantity: round(order.quantity, market.quantityDecimals ?? 4), price: round(order.price ?? market.price, market.priceDecimals ?? 2) });
+  const executableOrder = { ...order, quantity: round(order.quantity, market.quantityDecimals ?? 4), price: round(order.price ?? market.price, market.priceDecimals ?? 2) };
+  if (risk.mode === "paper") return { mode: "paper", order: { ...executableOrder, apiKey: "[redacted]" } };
+  return exchange.placeOrder(executableOrder);
 }

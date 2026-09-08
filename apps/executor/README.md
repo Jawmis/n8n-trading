@@ -18,3 +18,9 @@ bun run dev
 Action handlers are injectable. Provide `globalThis.LIGHTER_CLIENT` with
 `getMarketPrice` and `placeOrder` implementations to connect a Lighter SDK.
 The executor never creates a live exchange client implicitly.
+
+Trading defaults to paper mode. Live trading additionally requires
+`TRADING_MODE=live` and `LIVE_TRADING_ENABLED=true`. Configure
+`TRADING_KILL_SWITCH`, `ALLOWED_TRADING_ASSETS`, `MAX_ORDER_QUANTITY`, and
+`MAX_ORDER_NOTIONAL` before enabling live orders; missing or invalid limits
+fail closed.
