@@ -27,6 +27,15 @@ app.use(cors({
     credentials: true,
 }));
 
+app.get("/healthz", (_req, res) => res.json({ status: "ok" }));
+app.get("/readyz", (_req, res) => {
+    if (mongoose.connection.readyState !== 1) {
+        res.status(503).json({ status: "not_ready" });
+        return;
+    }
+    res.json({ status: "ready" });
+});
+
 app.post("/signup", async (req, res) => {
     const { success, data } = SignupSchema.safeParse(req.body);
     if (!success) {
@@ -273,4 +282,10 @@ app.get("/nodes", async (req, res) => {
     const nodes = await NodesModel.find();
     res.json(nodes)
 })
-app.listen(process.env.PORT || 3000);
+const server = app.listen(process.env.PORT || 3000);
+async function shutdown() {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await mongoose.disconnect();
+}
+process.once("SIGTERM", () => void shutdown());
+process.once("SIGINT", () => void shutdown());

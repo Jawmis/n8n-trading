@@ -5,6 +5,21 @@ import { executeWorkflow, type WorkflowLike } from "./execute";
 export const POLL_INTERVAL_MS = 2_000;
 const JOB_LEASE_MS = 60_000;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+let stopping = false;
+let healthServer: ReturnType<typeof Bun.serve> | undefined;
+
+function startHealthServer() {
+  const port = Number(process.env.EXECUTOR_HEALTH_PORT ?? 3001);
+  healthServer = Bun.serve({
+    port,
+    fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (path === "/healthz") return Response.json({ status: "ok" });
+      if (path === "/readyz") return Response.json({ status: mongoose.connection.readyState === 1 ? "ready" : "not_ready" }, { status: mongoose.connection.readyState === 1 ? 200 : 503 });
+      return new Response("Not found", { status: 404 });
+    },
+  });
+}
 
 function isTimerTrigger(node: WorkflowLike["nodes"][number]) {
   return String(node.data?.kind).toLowerCase() === "trigger" && node.type === "timer";
@@ -74,10 +89,16 @@ export async function startPolling() {
   if (!mongoUrl) throw new Error("MONGO_URL is required");
   await mongoose.connect(mongoUrl);
   console.log("[executor] connected to MongoDB");
-  while (true) {
+  startHealthServer();
+  const stop = () => { stopping = true; };
+  process.once("SIGTERM", stop);
+  process.once("SIGINT", stop);
+  while (!stopping) {
     try { await pollOnce(); } catch (error) { console.error("[executor] polling error", error); }
-    await sleep(POLL_INTERVAL_MS);
+    if (!stopping) await sleep(POLL_INTERVAL_MS);
   }
+  healthServer?.stop();
+  await mongoose.disconnect();
 }
 
 if (import.meta.main) void startPolling().catch((error) => {
