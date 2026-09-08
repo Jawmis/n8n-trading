@@ -6,6 +6,7 @@ const TOKEN_KEY = "auth_token";
 // Return types
 export type IdResponse = { id: string };
 export type SigninResponse = { id: string; token: string };
+export type Credential = { _id: string; provider: string; createdAt?: string; updatedAt?: string };
 
 export type WorkflowNode = {
   nodeId: string;
@@ -78,6 +79,25 @@ export async function apiSignout(): Promise<void> {
   } finally {
     setAuthToken(null);
   }
+}
+
+export async function apiCreateCredential(provider: string, secret: Record<string, unknown>): Promise<{ id: string; provider: string }> {
+  const res = await api.post<{ id: string; provider: string }>("/credentials", { provider, secret });
+  return res.data;
+}
+
+export async function apiListCredentials(): Promise<Credential[]> {
+  const res = await api.get<Credential[]>("/credentials");
+  return res.data;
+}
+
+export async function apiRotateCredential(credentialId: string, provider: string, secret: Record<string, unknown>): Promise<{ id: string; provider: string }> {
+  const res = await api.put<{ id: string; provider: string }>(`/credentials/${credentialId}`, { provider, secret });
+  return res.data;
+}
+
+export async function apiDeleteCredential(credentialId: string): Promise<void> {
+  await api.delete(`/credentials/${credentialId}`);
 }
 
 export async function apiCreateWorkflow(body: { nodes: WorkflowNode[]; edges: WorkflowEdge[] }): Promise<IdResponse> {

@@ -17,6 +17,11 @@ if (!MONGO_URL || !JWT_SECRET || !CREDENTIAL_ENCRYPTION_KEY) {
     throw new Error("MONGO_URL, JWT_SECRET, and CREDENTIAL_ENCRYPTION_KEY are required");
 }
 
+const CredentialPayloadSchema = z.object({
+    provider: z.enum(["lighter", "hyperliquid", "backpack"]),
+    secret: z.record(z.string(), z.unknown()).refine((secret) => Object.keys(secret).length > 0),
+}).strict();
+
 void mongoose.connect(MONGO_URL);
 
 const app = express();
@@ -225,10 +230,7 @@ app.get("/workflow/:workflowId", authMiddleware, async (req, res) => {
 });
 
 app.post("/credentials", authMiddleware, async (req, res) => {
-    const parsed = z.object({
-        provider: z.enum(["lighter", "hyperliquid", "backpack"]),
-        secret: z.record(z.string(), z.unknown()).refine((secret) => Object.keys(secret).length > 0),
-    }).strict().safeParse(req.body);
+    const parsed = CredentialPayloadSchema.safeParse(req.body);
     if (!parsed.success) {
         res.status(400).json({ message: "Invalid credential payload" });
         return;
@@ -239,6 +241,33 @@ app.post("/credentials", authMiddleware, async (req, res) => {
         res.status(201).json({ id: credential._id, provider: credential.provider });
     } catch {
         res.status(500).json({ message: "Failed to store credential" });
+    }
+});
+
+app.put("/credentials/:credentialId", authMiddleware, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.credentialId)) {
+        res.status(404).json({ message: "Credential not found" });
+        return;
+    }
+    const parsed = CredentialPayloadSchema.safeParse(req.body);
+    if (!parsed.success) {
+        res.status(400).json({ message: "Invalid credential payload" });
+        return;
+    }
+    try {
+        const encrypted = encryptCredential(parsed.data.secret);
+        const credential = await CredentialModel.findOneAndUpdate(
+            { _id: req.params.credentialId, userId: req.userId },
+            { provider: parsed.data.provider, ...encrypted },
+            { new: true },
+        );
+        if (!credential) {
+            res.status(404).json({ message: "Credential not found" });
+            return;
+        }
+        res.json({ id: credential._id, provider: credential.provider });
+    } catch {
+        res.status(500).json({ message: "Failed to rotate credential" });
     }
 });
 
