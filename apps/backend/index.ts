@@ -1,4 +1,5 @@
 import express from 'express';
+import type { ErrorRequestHandler } from 'express';
 import mongoose from 'mongoose';
 import { CredentialModel, ExecutionModel, NodesModel, UserModel, WorkflowModel } from 'db/client';
 import { encryptCredential } from 'db/credentials';
@@ -39,7 +40,7 @@ app.get("/readyz", (_req, res) => {
 app.post("/signup", async (req, res) => {
     const { success, data } = SignupSchema.safeParse(req.body);
     if (!success) {
-        res.status(403).json({
+        res.status(400).json({
             message : "Incorrect Inputs"
         })
         return;
@@ -54,7 +55,7 @@ app.post("/signup", async (req, res) => {
             id: user._id,
         })
     } catch (e) {
-        res.status(411).json({
+        res.status(409).json({
             message : "Username already exists"
         })
     }
@@ -63,7 +64,7 @@ app.post("/signup", async (req, res) => {
 app.post("/signin", async (req, res) => {
     const { success, data } = SigninSchema.safeParse(req.body);
     if (!success) {
-        res.status(403).json({
+        res.status(400).json({
             message : "Incorrect Inputs"
         })
         return;
@@ -97,8 +98,8 @@ app.post("/signin", async (req, res) => {
         })   
       } 
     } catch (e) {
-        res.status(411).json({
-            message : "Username already exists"
+        res.status(500).json({
+            message : "Failed to sign in"
         })
     } 
 });
@@ -112,7 +113,7 @@ app.post("/workflow",authMiddleware, async (req, res) => {
     const userId = req.userId;
     const { success, data } = CreateWorkflowSchema.safeParse(req.body);
     if (!success) {
-        res.status(403).json({
+        res.status(400).json({
             message : "incorrect inputs"
         })
         return
@@ -132,7 +133,7 @@ app.post("/workflow",authMiddleware, async (req, res) => {
             id : workflow._id
         })
     } catch (e) {
-        res.status(411).json({
+        res.status(500).json({
             message : "Failed to create workflow"
         })
     }
@@ -145,7 +146,7 @@ app.put("/workflow/:workflowId", authMiddleware,async(req, res) => {
     }
     const { success, data } = UpdateWorkflowSchema.safeParse(req.body);
     if (!success) {
-        res.status(403).json({
+        res.status(400).json({
             message : "incorrect inputs"
         })
         return
@@ -171,7 +172,7 @@ app.put("/workflow/:workflowId", authMiddleware,async(req, res) => {
             id : workflow._id
         })
     } catch (e) {
-        res.status(411).json({
+        res.status(500).json({
             message : "Failed to update workflow"
         })
     }
@@ -288,6 +289,16 @@ app.get("/nodes", async (req, res) => {
     const nodes = await NodesModel.find();
     res.json(nodes)
 })
+
+const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
+    if (error instanceof SyntaxError && "body" in error) {
+        res.status(400).json({ message: "Malformed JSON body" });
+        return;
+    }
+    res.status(500).json({ message: "Internal server error" });
+};
+app.use(errorHandler);
+
 const server = app.listen(process.env.PORT || 3000);
 async function shutdown() {
     await new Promise<void>((resolve) => server.close(() => resolve()));
