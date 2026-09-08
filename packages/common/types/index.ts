@@ -2,12 +2,12 @@ import { z } from "zod";
 
 export const SignupSchema = z.object({
     username: z.string().min(3).max(50),
-    password: z.string()
+    password: z.string().min(12).max(256)
 });
 
 export const SigninSchema= z.object({
     username: z.string().min(3).max(50),
-    password: z.string()
+    password: z.string().min(1).max(256)
 });
 
 export const CreateWorkflowSchema = z.object({

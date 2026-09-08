@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import { SignupSchema,SigninSchema, CreateWorkflowSchema, UpdateWorkflowSchema } from 'common/types';
 import { authMiddleware } from './middleware';
 import cors from 'cors';
+import { hashPassword, verifyPassword } from './password';
 
 mongoose.connect(process.env.MONGO_URL!);
 
@@ -30,7 +31,7 @@ app.post("/signup", async (req, res) => {
     try {
         const user = await UserModel.create({
             username: data.username,
-            password: data.password
+            password: await hashPassword(data.password)
         }) 
         
         res.json({
@@ -52,11 +53,12 @@ app.post("/signin", async (req, res) => {
         return;
     }
     try {
-        const user = await UserModel.findOne({
-            username: data.username,
-            password: data.password
-        })
-        if (user) {
+        const user = await UserModel.findOne({ username: data.username }).select("+password");
+        if (user && await verifyPassword(data.password, user.password)) {
+            if (!user.password.startsWith("$argon2")) {
+                user.password = await hashPassword(data.password);
+                await user.save();
+            }
             // return the user their jwt or token.
              
         const token = jwt.sign({
