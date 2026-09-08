@@ -18,6 +18,7 @@ export const CreateWorkflowSchema = z.object({
             metadata : z.any()
         }),
         credentials :z.any(),
+        type: z.string(),
         id: z.string(),
         position: z.object({
             x: z.number(),
@@ -39,6 +40,7 @@ export const UpdateWorkflowSchema = z.object({
             metadata : z.any()
         }),
         credentials : z.any().optional(),
+        type: z.string(),
         id: z.string(),
         position: z.object({
             x: z.number(),

@@ -64,8 +64,13 @@ const WorkflowNodeSchema = new Schema({
         type : Schema.Types.Mixed
     },
     nodeId: {
-        type: mongoose.Types.ObjectId,
-        ref : 'Nodes'
+        type: String,
+        required: true
+    },
+    type: {
+        type: String,
+        required: true,
+        enum: ["timer", "price-trigger", "lighter", "backpack", "hyperliquid"]
     },
     data: NodeDataSchema
     
