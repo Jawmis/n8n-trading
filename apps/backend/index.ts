@@ -113,7 +113,11 @@ app.put("/workflow/:workflowId", authMiddleware,async(req, res) => {
         return
     }
     try {
-        const workflow = await WorkflowModel.findByIdAndUpdate(req.params.workflowId, data, { new: true });
+        const workflow = await WorkflowModel.findOneAndUpdate(
+            { _id: req.params.workflowId, userId: req.userId },
+            data,
+            { new: true }
+        );
         if (!workflow) {
             res.status(404).json({
                 message : "Workflow not found"
@@ -166,8 +170,16 @@ app.get("/workflow/:workflowId", authMiddleware, async (req, res) => {
 });
 
 app.get("/workflow/executions/:workflowId",authMiddleware, async(req, res) => {
+    const workflow = await WorkflowModel.findOne({
+        _id: req.params.workflowId,
+        userId: req.userId,
+    });
+    if (!workflow) {
+        res.status(404).json({ message: "Workflow not found" });
+        return;
+    }
     const executions = await ExecutionModel.find({
-        workflowId: req.params.workflowId
+        workflowId: workflow._id
     });
     res.json(executions)
 });
