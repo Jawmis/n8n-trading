@@ -97,10 +97,11 @@ export async function apiListWorkflows(): Promise<Workflow[]> {
   return res.data;
 }
 
-export type WorkflowExecution = { id?: string; status?: string; startTime?: string; endTime?: string; error?: string };
+export type WorkflowExecution = { _id?: string; id?: string; status?: string; startTime?: string; endTime?: string; error?: string };
+export type PaginatedExecutions = { items: WorkflowExecution[]; page: number; pageSize: number; total: number; totalPages: number };
 
-export async function apiListExecutions(workflowId: string): Promise<WorkflowExecution[]> {
-  const res = await api.get<WorkflowExecution[]>(`/workflow/executions/${workflowId}`);
+export async function apiListExecutions(workflowId: string, page = 1, pageSize = 25): Promise<PaginatedExecutions> {
+  const res = await api.get<PaginatedExecutions>(`/workflow/executions/${workflowId}`, { params: { page, pageSize } });
   return res.data;
 }
 

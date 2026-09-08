@@ -121,6 +121,10 @@ app.post("/workflow",authMiddleware, async (req, res) => {
 });
 
 app.put("/workflow/:workflowId", authMiddleware,async(req, res) => {
+    if (!mongoose.isValidObjectId(req.params.workflowId)) {
+        res.status(404).json({ message: "Workflow not found" });
+        return;
+    }
     const { success, data } = UpdateWorkflowSchema.safeParse(req.body);
     if (!success) {
         res.status(403).json({
@@ -182,7 +186,10 @@ app.get("/workflows", authMiddleware, async (req, res) => {
 });
 
 app.get("/workflow/:workflowId", authMiddleware, async (req, res) => {
-    
+    if (!mongoose.isValidObjectId(req.params.workflowId)) {
+        res.status(404).json({ message: "Workflow not found" });
+        return;
+    }
     //to : make sure the workflow belongs to the user
     const workflow = await WorkflowModel.findById(req.params.workflowId);
     if (!workflow || workflow.userId.toString() !== req.userId) {
@@ -195,6 +202,10 @@ app.get("/workflow/:workflowId", authMiddleware, async (req, res) => {
 });
 
 app.get("/workflow/executions/:workflowId",authMiddleware, async(req, res) => {
+    if (!mongoose.isValidObjectId(req.params.workflowId)) {
+        res.status(404).json({ message: "Workflow not found" });
+        return;
+    }
     const workflow = await WorkflowModel.findOne({
         _id: req.params.workflowId,
         userId: req.userId,
@@ -203,10 +214,16 @@ app.get("/workflow/executions/:workflowId",authMiddleware, async(req, res) => {
         res.status(404).json({ message: "Workflow not found" });
         return;
     }
-    const executions = await ExecutionModel.find({
-        workflowId: workflow._id
-    });
-    res.json(executions)
+    const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(req.query.pageSize ?? "25"), 10) || 25));
+    const [executions, total] = await Promise.all([
+        ExecutionModel.find({ workflowId: workflow._id })
+            .sort({ startTime: -1, _id: -1 })
+            .skip((page - 1) * pageSize)
+            .limit(pageSize),
+        ExecutionModel.countDocuments({ workflowId: workflow._id }),
+    ]);
+    res.json({ items: executions, page, pageSize, total, totalPages: Math.ceil(total / pageSize) });
 });
 
 app.get("/nodes", async (req, res) => {
