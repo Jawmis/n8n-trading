@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { apiListWorkflows, type Workflow } from '@/lib/http';
+import { Link, useNavigate } from 'react-router-dom';
+import { apiListWorkflows, apiSignout, type Workflow } from '@/lib/http';
 
 export default function Dashboard() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     apiListWorkflows()
@@ -19,6 +20,9 @@ export default function Dashboard() {
         <Link to="/create-workflow" className="px-4 py-2 rounded-md bg-primary text-primary-foreground">
           New Workflow
         </Link>
+        <button onClick={() => apiSignout().then(() => navigate('/auth'))} className="px-4 py-2 rounded-md border">
+          Sign out
+        </button>
       </div>
 
       {loading ? (

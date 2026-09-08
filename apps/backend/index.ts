@@ -78,7 +78,8 @@ app.post("/signin", async (req, res) => {
             // return the user their jwt or token.
              
             const token = jwt.sign({
-                id: user._id
+                id: user._id,
+                tokenVersion: user.tokenVersion,
             }, JWT_SECRET, {
                 algorithm: "HS256",
                 expiresIn: "1h",
@@ -100,6 +101,11 @@ app.post("/signin", async (req, res) => {
             message : "Username already exists"
         })
     } 
+});
+
+app.post("/signout", authMiddleware, async (req, res) => {
+    await UserModel.updateOne({ _id: req.userId }, { $inc: { tokenVersion: 1 } });
+    res.status(204).send();
 });
 
 app.post("/workflow",authMiddleware, async (req, res) => {

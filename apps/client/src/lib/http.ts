@@ -72,6 +72,14 @@ export async function apiSignin(body: { username: string; password: string }): P
   return res.data;
 }
 
+export async function apiSignout(): Promise<void> {
+  try {
+    await api.post("/signout");
+  } finally {
+    setAuthToken(null);
+  }
+}
+
 export async function apiCreateWorkflow(body: { nodes: WorkflowNode[]; edges: WorkflowEdge[] }): Promise<IdResponse> {
   const res = await api.post<IdResponse>("/workflow", body);
   return res.data;
