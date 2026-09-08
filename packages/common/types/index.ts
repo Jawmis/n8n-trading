@@ -38,7 +38,7 @@ export const UpdateWorkflowSchema = z.object({
             kind: z.enum(["ACTION", "TRIGGER"]),
             metadata : z.any()
         }),
-        metadata : z.any(),
+        credentials : z.any().optional(),
         id: z.string(),
         position: z.object({
             x: z.number(),
