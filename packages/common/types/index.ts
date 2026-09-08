@@ -24,12 +24,12 @@ export const CreateWorkflowSchema = z.object({
             x: z.number(),
             y: z.number()
         })
-    })),
+    }).strict()).max(100),
     edges: z.array(z.object({
         id: z.string(),
         source: z.string(),
         target : z.string()
-    }))
+    }).strict()).max(500)
 })
 
 export const UpdateWorkflowSchema = z.object({
@@ -46,10 +46,10 @@ export const UpdateWorkflowSchema = z.object({
             x: z.number(),
             y: z.number()
         })
-    })),
+    }).strict()).max(100),
     edges: z.array(z.object({
         id: z.string(),
         source: z.string(),
         target: z.string()
-    }))
+    }).strict()).max(500)
 })

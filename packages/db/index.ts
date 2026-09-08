@@ -107,6 +107,7 @@ const WorkflowSchema = new Schema({
         type: Date
     }
 });
+WorkflowSchema.index({ userId: 1 });
 
 const CredentialsTypeSchema = new Schema({
     title: {
@@ -158,6 +159,7 @@ const ExecutionSchema = new Schema({
         type: String
     }
 })
+ExecutionSchema.index({ workflowId: 1, startTime: -1 });
 
 export const UserModel = mongoose.model("Users", UserSchema);
 export const WorkflowModel = mongoose.model("Workflows", WorkflowSchema);
