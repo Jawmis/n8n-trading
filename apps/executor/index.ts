@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { ExecutionModel, WorkflowModel } from "db/client";
 import { executeWorkflow, type WorkflowLike } from "./execute";
+import { crossedThreshold, type PriceDirection } from "./price";
 
 export const POLL_INTERVAL_MS = 2_000;
 const JOB_LEASE_MS = 60_000;
@@ -25,6 +26,12 @@ function isTimerTrigger(node: WorkflowLike["nodes"][number]) {
   return String(node.data?.kind).toLowerCase() === "trigger" && node.type === "timer";
 }
 
+type PriceFeed = { getPrice(asset: string): Promise<number> };
+function priceFeed() {
+  return (globalThis as typeof globalThis & { PRICE_FEED?: PriceFeed }).PRICE_FEED;
+}
+const lastPrices = new Map<string, number>();
+
 export function timerIsDue(lastExecution: { startTime?: Date | string } | null, seconds: unknown, now = Date.now()) {
   const interval = Number(seconds);
   if (!Number.isFinite(interval) || interval <= 0) return false;
@@ -36,7 +43,24 @@ async function enqueueTimerJobs(now: number) {
   const workflows = await WorkflowModel.find();
   for (const workflow of workflows as unknown as WorkflowLike[]) {
     const trigger = workflow.nodes.find((node) => String(node.data?.kind).toLowerCase() === "trigger");
-    if (!trigger || !isTimerTrigger(trigger)) continue;
+    if (!trigger) continue;
+    if (trigger.type === "price-trigger") {
+      const feed = priceFeed();
+      const metadata = trigger.data?.metadata ?? {};
+      if (!feed || typeof metadata.asset !== "string" || typeof metadata.price !== "number") continue;
+      try {
+        const current = await feed.getPrice(metadata.asset);
+        const key = `${workflow._id}:${trigger.id}`;
+        const previous = lastPrices.get(key);
+        lastPrices.set(key, current);
+        if (previous === undefined || !crossedThreshold(previous, current, metadata.price, metadata.direction as PriceDirection | undefined)) continue;
+        await ExecutionModel.create({ workflowId: workflow._id, kind: "price", status: "pending", queueKey: `${key}:${now}` });
+      } catch {
+        // A stale or disconnected price feed must not trigger a trade.
+      }
+      continue;
+    }
+    if (!isTimerTrigger(trigger)) continue;
     const seconds = Number(trigger.data?.metadata?.time);
     if (!timerIsDue(await ExecutionModel.findOne({ workflowId: workflow._id }).sort({ startTime: -1 }), seconds, now)) continue;
     const slot = Math.floor(now / (seconds * 1_000));

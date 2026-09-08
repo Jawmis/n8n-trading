@@ -168,7 +168,7 @@ const ExecutionSchema = new Schema({
     },
     kind: {
         type: String,
-        enum: ["manual", "timer"],
+        enum: ["manual", "timer", "price"],
         required: true
     },
     startTime: {

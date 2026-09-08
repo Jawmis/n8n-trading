@@ -24,3 +24,7 @@ Trading defaults to paper mode. Live trading additionally requires
 `TRADING_KILL_SWITCH`, `ALLOWED_TRADING_ASSETS`, `MAX_ORDER_QUANTITY`, and
 `MAX_ORDER_NOTIONAL` before enabling live orders; missing or invalid limits
 fail closed.
+
+Price triggers require an injected `globalThis.PRICE_FEED` implementing
+`getPrice(asset)`. The executor records a pending price-trigger execution only
+when a threshold is crossed; missing or failing feeds do not trigger orders.
