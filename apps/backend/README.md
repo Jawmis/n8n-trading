@@ -16,4 +16,7 @@ Passwords are stored as Argon2id hashes. Existing legacy plaintext records are
 accepted only during a successful sign-in and are rehashed immediately; users
 must use the current password policy when creating new accounts.
 
+Set `CREDENTIAL_ENCRYPTION_KEY` to a base64-encoded 32-byte key. Broker
+credentials are encrypted at rest and workflows store only credential IDs.
+
 This project was created using `bun init` in bun v1.3.1. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.

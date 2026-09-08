@@ -4,12 +4,14 @@
   "type": "module",
   "private": true,
   "exports":{
-    "./client" : "./index.ts"
+    "./client" : "./index.ts",
+    "./credentials" : "./credentials.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5"
-  }
+  },
+  "scripts": { "test": "bun test" }
 }

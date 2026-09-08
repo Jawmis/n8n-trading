@@ -1,16 +1,19 @@
 import express from 'express';
 import mongoose from 'mongoose';
-import { ExecutionModel, NodesModel, UserModel, WorkflowModel } from 'db/client';
+import { CredentialModel, ExecutionModel, NodesModel, UserModel, WorkflowModel } from 'db/client';
+import { encryptCredential } from 'db/credentials';
 import jwt from "jsonwebtoken"; 
 import { SignupSchema,SigninSchema, CreateWorkflowSchema, UpdateWorkflowSchema, validateWorkflowGraph } from 'common/types';
 import { authMiddleware, JWT_AUDIENCE, JWT_ISSUER } from './middleware';
 import cors from 'cors';
 import { hashPassword, verifyPassword } from './password';
+import { z } from 'zod';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const MONGO_URL = process.env.MONGO_URL;
-if (!MONGO_URL || !JWT_SECRET) {
-    throw new Error("MONGO_URL and JWT_SECRET are required");
+const CREDENTIAL_ENCRYPTION_KEY = process.env.CREDENTIAL_ENCRYPTION_KEY;
+if (!MONGO_URL || !JWT_SECRET || !CREDENTIAL_ENCRYPTION_KEY) {
+    throw new Error("MONGO_URL, JWT_SECRET, and CREDENTIAL_ENCRYPTION_KEY are required");
 }
 
 void mongoose.connect(MONGO_URL);
@@ -182,7 +185,10 @@ app.get("/workflows", authMiddleware, async (req, res) => {
     const workflows = await WorkflowModel.find({
         userId: req.userId
     });
-    res.json(workflows);
+    res.json(workflows.map((workflow) => {
+        const value = workflow.toObject();
+        return { ...value, nodes: value.nodes.map(({ credentials: _credentials, ...node }) => node) };
+    }));
 });
 
 app.get("/workflow/:workflowId", authMiddleware, async (req, res) => {
@@ -198,7 +204,44 @@ app.get("/workflow/:workflowId", authMiddleware, async (req, res) => {
         })
         return
     }
-    res.json(workflow);
+    const value = workflow.toObject();
+    res.json({ ...value, nodes: value.nodes.map(({ credentials: _credentials, ...node }) => node) });
+});
+
+app.post("/credentials", authMiddleware, async (req, res) => {
+    const parsed = z.object({
+        provider: z.enum(["lighter", "hyperliquid", "backpack"]),
+        secret: z.record(z.string(), z.unknown()).refine((secret) => Object.keys(secret).length > 0),
+    }).strict().safeParse(req.body);
+    if (!parsed.success) {
+        res.status(400).json({ message: "Invalid credential payload" });
+        return;
+    }
+    try {
+        const encrypted = encryptCredential(parsed.data.secret);
+        const credential = await CredentialModel.create({ userId: req.userId, provider: parsed.data.provider, ...encrypted });
+        res.status(201).json({ id: credential._id, provider: credential.provider });
+    } catch {
+        res.status(500).json({ message: "Failed to store credential" });
+    }
+});
+
+app.get("/credentials", authMiddleware, async (req, res) => {
+    const credentials = await CredentialModel.find({ userId: req.userId }).select("provider createdAt updatedAt").sort({ createdAt: -1 });
+    res.json(credentials);
+});
+
+app.delete("/credentials/:credentialId", authMiddleware, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.credentialId)) {
+        res.status(404).json({ message: "Credential not found" });
+        return;
+    }
+    const credential = await CredentialModel.findOneAndDelete({ _id: req.params.credentialId, userId: req.userId });
+    if (!credential) {
+        res.status(404).json({ message: "Credential not found" });
+        return;
+    }
+    res.status(204).send();
 });
 
 app.get("/workflow/executions/:workflowId",authMiddleware, async(req, res) => {

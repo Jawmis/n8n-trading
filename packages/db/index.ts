@@ -15,6 +15,15 @@ const UserSchema = new Schema({
 
 });
 
+const CredentialSchema = new Schema({
+    userId: { type: mongoose.Types.ObjectId, required: true, ref: "Users" },
+    provider: { type: String, required: true, enum: ["lighter", "hyperliquid", "backpack"] },
+    ciphertext: { type: String, required: true },
+    iv: { type: String, required: true },
+    authTag: { type: String, required: true },
+}, { timestamps: true });
+CredentialSchema.index({ userId: 1, provider: 1 });
+
 const PositionSchema = new Schema({
     x: {
         type: Number,
@@ -61,7 +70,8 @@ const WorkflowNodeSchema = new Schema({
     },
     position: PositionSchema,
     credentials: {
-        type : Schema.Types.Mixed
+        type : Schema.Types.Mixed,
+        select: false
     },
     nodeId: {
         type: String,
@@ -71,6 +81,10 @@ const WorkflowNodeSchema = new Schema({
         type: String,
         required: true,
         enum: ["timer", "price-trigger", "lighter", "backpack", "hyperliquid"]
+    },
+    credentialId: {
+        type: mongoose.Types.ObjectId,
+        ref: "Credentials"
     },
     data: NodeDataSchema
     
@@ -184,6 +198,7 @@ ExecutionSchema.index({ workflowId: 1, startTime: -1 });
 ExecutionSchema.index({ status: 1, leaseUntil: 1 });
 
 export const UserModel = mongoose.model("Users", UserSchema);
+export const CredentialModel = mongoose.model("Credentials", CredentialSchema);
 export const WorkflowModel = mongoose.model("Workflows", WorkflowSchema);
 export const NodesModel = mongoose.model("Nodes", NodesSchema);
 export const ExecutionModel = mongoose.model("Executions", ExecutionSchema);

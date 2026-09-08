@@ -1,4 +1,6 @@
-import { ExecutionModel } from "db/client";
+import mongoose from "mongoose";
+import { CredentialModel, ExecutionModel } from "db/client";
+import { decryptCredential } from "db/credentials";
 import { dispatchAction } from "./executors";
 import { validateWorkflowGraph } from "common/types";
 
@@ -7,10 +9,12 @@ export interface WorkflowNodeLike {
   type?: string;
   data?: { kind?: string; metadata?: Record<string, unknown> };
   credentials?: Record<string, unknown>;
+  credentialId?: string;
 }
 export interface WorkflowLike {
   // Mongoose accepts ObjectId values, while tests and adapters commonly use strings.
-  _id: any;
+  _id: mongoose.Types.ObjectId | string;
+  userId?: mongoose.Types.ObjectId | string;
   runRequestedAt?: Date | string;
   nodes: WorkflowNodeLike[];
   edges: { source: string; target: string }[];
@@ -25,7 +29,15 @@ export async function executeRecursive(workflow: WorkflowLike, currentNodeId: st
     .map((edge) => workflow.nodes.find((node) => node.id === edge.target))
     .filter((node): node is WorkflowNodeLike => Boolean(node));
   await Promise.all(children.map(async (node) => {
-    if (isAction(node)) await dispatchAction(node);
+    if (isAction(node)) {
+      if (!node.credentialId || !workflow.userId) throw new Error(`Action node ${node.id} has no credential reference`);
+      const credential = await CredentialModel.findOne({ _id: node.credentialId, userId: workflow.userId }).select("+ciphertext +iv +authTag");
+      if (!credential) throw new Error(`Credential not found for action node ${node.id}`);
+      await dispatchAction({
+        ...node,
+        credentials: decryptCredential(credential.toObject()),
+      });
+    }
     await executeRecursive(workflow, node.id, new Set(visited));
   }));
 }

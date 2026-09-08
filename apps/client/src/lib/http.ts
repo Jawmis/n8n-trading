@@ -10,7 +10,7 @@ export type SigninResponse = { id: string; token: string };
 export type WorkflowNode = {
   nodeId: string;
   data: { kind: "ACTION" | "TRIGGER"; metadata: unknown };
-  credentials?: unknown;
+  credentialId?: string;
   id: string;
   position: { x: number; y: number };
   type: string;

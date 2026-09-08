@@ -10,7 +10,7 @@ const NodeSchema = z.object({
     nodeId: z.string().min(1),
     type: z.enum(["timer", "price-trigger", "lighter", "backpack", "hyperliquid"]),
     data: z.object({ kind: z.enum(["ACTION", "TRIGGER"]), metadata: z.unknown() }).strict(),
-    credentials: z.record(z.string(), z.unknown()).optional(),
+    credentialId: z.string().min(1).optional(),
     id: z.string().min(1),
     position: PositionSchema,
 }).strict();
