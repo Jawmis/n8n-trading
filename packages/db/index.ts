@@ -145,7 +145,12 @@ const ExecutionSchema = new Schema({
     },
     status: {
         type: String,
-        enum : ["pending", "success", "failure", "PENDING", "SUCCESS", "FAILURE"]
+        enum : ["pending", "running", "success", "failure"]
+    },
+    kind: {
+        type: String,
+        enum: ["manual", "timer"],
+        required: true
     },
     startTime: {
         type: Date,
@@ -155,11 +160,28 @@ const ExecutionSchema = new Schema({
     endTime: {
         type: Date
     },
+    claimedAt: {
+        type: Date
+    },
+    leaseUntil: {
+        type: Date
+    },
+    attempt: {
+        type: Number,
+        default: 0,
+        required: true
+    },
+    queueKey: {
+        type: String,
+        unique: true,
+        sparse: true
+    },
     error: {
         type: String
     }
 })
 ExecutionSchema.index({ workflowId: 1, startTime: -1 });
+ExecutionSchema.index({ status: 1, leaseUntil: 1 });
 
 export const UserModel = mongoose.model("Users", UserSchema);
 export const WorkflowModel = mongoose.model("Workflows", WorkflowSchema);

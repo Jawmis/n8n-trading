@@ -29,17 +29,20 @@ export async function executeRecursive(workflow: WorkflowLike, currentNodeId: st
   }));
 }
 
-export async function executeWorkflow(workflow: WorkflowLike) {
+export async function executeWorkflow(workflow: WorkflowLike, executionId?: unknown) {
   const trigger = workflow.nodes.find((node) => String(node.data?.kind).toLowerCase() === "trigger");
   if (!trigger) throw new Error("Workflow has no trigger node");
-  const execution = await ExecutionModel.create({ workflowId: workflow._id, status: status.pending, startTime: new Date() });
+  const execution = executionId
+    ? await ExecutionModel.findById(executionId)
+    : await ExecutionModel.create({ workflowId: workflow._id, kind: "manual", status: status.pending, startTime: new Date() });
+  if (!execution) throw new Error("Execution job not found");
   try {
     await executeRecursive(workflow, trigger.id);
-    await ExecutionModel.updateOne({ _id: execution._id }, { $set: { status: status.success, endTime: new Date() } });
+    await ExecutionModel.updateOne({ _id: execution._id }, { $set: { status: status.success, endTime: new Date(), leaseUntil: null } });
     return execution._id;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await ExecutionModel.updateOne({ _id: execution._id }, { $set: { status: status.failure, endTime: new Date(), error: message } });
+    await ExecutionModel.updateOne({ _id: execution._id }, { $set: { status: status.failure, endTime: new Date(), error: message, leaseUntil: null } });
     throw error;
   }
 }

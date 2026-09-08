@@ -162,7 +162,11 @@ app.post("/workflow/:workflowId/execute", authMiddleware, async (req, res) => {
             res.status(404).json({ message: "Workflow not found" });
             return;
         }
-        await WorkflowModel.updateOne({ _id: workflow._id }, { $set: { runRequestedAt: new Date() } });
+        await ExecutionModel.create({
+            workflowId: workflow._id,
+            kind: "manual",
+            status: "pending",
+        });
         res.json({ message: "Workflow queued for execution" });
     } catch {
         res.status(500).json({ message: "Failed to queue workflow" });
