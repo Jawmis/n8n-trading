@@ -27,18 +27,10 @@ import type { PriceTriggerMetadata, TimerNodeMetadata, TradingMetadata } from "c
 
 
 const SUPPORTED_ACTIONS = [{
-    id: "hyperliquid",
-    title: "HyperLiquid",
-    description: "Place a trade on hyperliquid."
-}, {
     id: "lighter",
     title: "Lighter",
     description: "Place a trade on Lighter."
-}, {
-    id: "backpack",
-    title: "Backpack",
-    description: "Place a trade on Backpack."
-}]
+}];
 
 export const ActionSheet = ({
     onSelect,

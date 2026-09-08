@@ -85,7 +85,7 @@ const WorkflowNodeSchema = new Schema({
     type: {
         type: String,
         required: true,
-        enum: ["timer", "price-trigger", "lighter", "backpack", "hyperliquid"]
+        enum: ["timer", "price-trigger", "lighter"]
     },
     credentialId: {
         type: mongoose.Types.ObjectId,

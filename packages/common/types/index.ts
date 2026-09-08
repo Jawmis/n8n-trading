@@ -8,7 +8,7 @@ const PositionSchema = z.object({ x: z.number().finite(), y: z.number().finite()
 const EdgeSchema = z.object({ id: z.string().min(1), source: z.string().min(1), target: z.string().min(1) }).strict();
 const NodeSchema = z.object({
     nodeId: z.string().min(1),
-    type: z.enum(["timer", "price-trigger", "lighter", "backpack", "hyperliquid"]),
+    type: z.enum(["timer", "price-trigger", "lighter"]),
     data: z.object({ kind: z.enum(["ACTION", "TRIGGER"]), metadata: z.unknown() }).strict(),
     credentialId: z.string().min(1).optional(),
     id: z.string().min(1),
@@ -24,7 +24,7 @@ const TradingMetadataSchema = z.object({ type: z.enum(["LONG", "SHORT"]), qty: z
 function validateNodeMetadata(node: z.infer<typeof NodeSchema>) {
     if (node.type === "timer" && node.data.kind === "TRIGGER") return TimerMetadataSchema.safeParse(node.data.metadata);
     if (node.type === "price-trigger" && node.data.kind === "TRIGGER") return PriceTriggerMetadataSchema.safeParse(node.data.metadata);
-    if (["lighter", "backpack", "hyperliquid"].includes(node.type) && node.data.kind === "ACTION") return TradingMetadataSchema.safeParse(node.data.metadata);
+    if (node.type === "lighter" && node.data.kind === "ACTION") return TradingMetadataSchema.safeParse(node.data.metadata);
     return { success: false as const };
 }
 
