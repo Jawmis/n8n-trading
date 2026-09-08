@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { ReactFlow, applyNodeChanges, applyEdgeChanges, addEdge } from '@xyflow/react';
+import { ReactFlow, applyNodeChanges, applyEdgeChanges, addEdge, type Connection, type EdgeChange, type NodeChange, type OnConnectEnd } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { TriggerSheet } from './TriggerSheet';
 import { PriceTrigger} from '@/nodes/triggers/PriceTrigger';
@@ -60,23 +60,23 @@ export function CreateWorkflow() {
   const [showTriggerSheet, setShowTriggerSheet] = useState(true);
  
   const onNodesChange = useCallback(
-    (changes: any) => setNodes((nodesSnapshot) => applyNodeChanges(changes, nodesSnapshot)),
+    (changes: NodeChange[]) => setNodes((nodesSnapshot) => applyNodeChanges(changes, nodesSnapshot) as NodeType[]),
     [],
   );
   const onEdgesChange = useCallback(
-    (changes: any) => setEdges((edgesSnapshot) => applyEdgeChanges(changes, edgesSnapshot)),
+    (changes: EdgeChange[]) => setEdges((edgesSnapshot) => applyEdgeChanges(changes, edgesSnapshot)),
     [],
   );
   const onConnect = useCallback(
-    (params : any) => setEdges((edgesSnapshot) => addEdge(params, edgesSnapshot)),
+    (params: Connection) => setEdges((edgesSnapshot) => addEdge(params, edgesSnapshot)),
     [],
   );
-  const onConnectEnd = useCallback(
-    (_params: unknown, connectionInfo: any) => {
-      if (!connectionInfo?.isValid) {
+  const onConnectEnd: OnConnectEnd = useCallback(
+    (_event, connectionInfo) => {
+      if (connectionInfo.isValid === false && connectionInfo.fromNode) {
         setSelectAction({
           startingNodeId: connectionInfo.fromNode.id,
-          position: connectionInfo.to ?? connectionInfo.from
+          position: connectionInfo.to ?? { x: 0, y: 0 }
         });
         setShowActionSheet(true);
       }

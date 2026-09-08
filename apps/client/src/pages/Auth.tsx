@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiSignin, apiSignup } from '@/lib/http';
+import axios from 'axios';
 
 export default function Auth() {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
@@ -20,8 +21,9 @@ export default function Auth() {
         await apiSignin({ username, password });
       }
       navigate('/dashboard');
-    } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Something went wrong');
+    } catch (err: unknown) {
+      const message = axios.isAxiosError<{ message?: string }>(err) ? err.response?.data?.message : undefined;
+      setError(message ?? 'Something went wrong');
     }
   }
 

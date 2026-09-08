@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select"
 import { useState } from "react";
 import { SUPPORTED_ASSETS } from "common/types";
+import type { PriceTriggerMetadata, TimerNodeMetadata } from "common/types";
 
 
 
@@ -42,8 +43,7 @@ export const TriggerSheet = ({
     onSelect: (kind: NodeKind, metadata: NodeMetadata) => void
 }
 ) => {
-    // creating a state variable 
-    const [metadeta, setMetadata] = useState<any>({
+    const [metadeta, setMetadata] = useState<Partial<PriceTriggerMetadata & TimerNodeMetadata>>({
         time: 3600
     });
     const [selectedTrigger, setSelectedTrigger] = useState(SUPPORTED_TRIGGERS[0].id);
@@ -75,7 +75,7 @@ export const TriggerSheet = ({
                 </div>
                 {selectedTrigger === "timer" && <div className="space-y-2 rounded-lg border border-border p-4">
                     <div className="text-sm font-medium">Number of seconds</div>
-                     <Input value={metadeta.time} onChange={(e) => setMetadata((metadeta: any) => ({
+                     <Input value={metadeta.time} onChange={(e) => setMetadata((metadeta) => ({
                             ...metadeta,
                             time : Number(e.target.value)
                         }))}></Input>
@@ -84,14 +84,14 @@ export const TriggerSheet = ({
                 {selectedTrigger === "price-trigger" && <div className="space-y-4 rounded-lg border border-border p-4">
                     <div className="space-y-2">
                         <div className="text-sm font-medium">Price</div>
-                        <Input type="text" onChange={(e) => setMetadata((m: any) => ({
+                        <Input type="text" onChange={(e) => setMetadata((m) => ({
                             ...m,
                             price: Number(e.target.value)
                         }))}></Input>
                     </div>
                     <div className="space-y-2">
                         <div className="text-sm font-medium">Asset</div>
-                        <Select value={metadeta.asset} onValueChange={(value) => setMetadata((metadeta: any) => ({
+                        <Select value={metadeta.asset} onValueChange={(value) => setMetadata((metadeta) => ({
                             ...metadeta,
                             asset: value
                         }))}>

@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const BASE_URL = (import.meta as any)?.env?.VITE_API_URL || "http://localhost:3000";
+const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 const TOKEN_KEY = "auth_token";
 
 // Return types
@@ -9,8 +9,8 @@ export type SigninResponse = { id: string; token: string };
 
 export type WorkflowNode = {
   nodeId: string;
-  data: { kind: "ACTION" | "TRIGGER"; metadata: any };
-  credentials?: any;
+  data: { kind: "ACTION" | "TRIGGER"; metadata: unknown };
+  credentials?: unknown;
   id: string;
   position: { x: number; y: number };
   type: string;
@@ -44,7 +44,7 @@ api.interceptors.request.use((config) => {
   const token = getAuthToken();
   if (token) {
     config.headers = config.headers ?? {};
-    (config.headers as any).Authorization = token;
+    config.headers.Authorization = token;
   }
   return config;
 });
@@ -61,12 +61,12 @@ export async function apiSignin(body: { username: string; password: string }): P
   return res.data;
 }
 
-export async function apiCreateWorkflow(body: any): Promise<IdResponse> {
+export async function apiCreateWorkflow(body: { nodes: WorkflowNode[]; edges: WorkflowEdge[] }): Promise<IdResponse> {
   const res = await api.post<IdResponse>("/workflow", body);
   return res.data;
 }
 
-export async function apiUpdateWorkflow(workflowId: string, body: any): Promise<IdResponse> {
+export async function apiUpdateWorkflow(workflowId: string, body: { nodes: WorkflowNode[]; edges: WorkflowEdge[] }): Promise<IdResponse> {
   const res = await api.put<IdResponse>(`/workflow/${workflowId}`, body);
   return res.data;
 }
@@ -86,12 +86,14 @@ export async function apiListWorkflows(): Promise<Workflow[]> {
   return res.data;
 }
 
-export async function apiListExecutions(workflowId: string): Promise<any[]> {
-  const res = await api.get<any[]>(`/workflow/executions/${workflowId}`);
+export type WorkflowExecution = { id?: string; status?: string; startTime?: string; endTime?: string; error?: string };
+
+export async function apiListExecutions(workflowId: string): Promise<WorkflowExecution[]> {
+  const res = await api.get<WorkflowExecution[]>(`/workflow/executions/${workflowId}`);
   return res.data;
 }
 
-export async function apiListNodes(): Promise<any[]> {
-  const res = await api.get<any[]>("/nodes");
+export async function apiListNodes(): Promise<unknown[]> {
+  const res = await api.get<unknown[]>("/nodes");
   return res.data;
 }

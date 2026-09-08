@@ -9,7 +9,7 @@ export type TimerNodeMetadata = {
 export type TradingMetadata = {
     type: "LONG" | "SHORT",
     qty: number,
-    symbol: typeof SUPPORTED_ASSETS
+    symbol: (typeof SUPPORTED_ASSETS)[number]
 };
 
 export type PriceTriggerMetadata = {

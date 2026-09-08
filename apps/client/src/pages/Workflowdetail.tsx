@@ -12,7 +12,7 @@ import {
   type NodeChange,
   type EdgeChange,
 } from '@xyflow/react';
-import { apiExecuteWorkflow, apiGetWorkflow, apiUpdateWorkflow, type Workflow } from '@/lib/http';
+import { apiExecuteWorkflow, apiGetWorkflow, apiUpdateWorkflow, type Workflow, type WorkflowNode } from '@/lib/http';
 import { TriggerSheet } from '@/component/TriggerSheet';
 import { ActionSheet } from '@/component/ActionSheet';
 import { Timer } from '@/nodes/triggers/Timer';
@@ -102,7 +102,19 @@ export default function WorkflowDetail() {
     if (!workflowId) return;
     setSaving(true);
     try {
-      await apiUpdateWorkflow(workflowId, { nodes, edges });
+      await apiUpdateWorkflow(workflowId, {
+        nodes: nodes.map((node): WorkflowNode => ({
+          nodeId: node.type ?? '',
+          type: node.type ?? '',
+          id: node.id,
+          position: { x: node.position.x, y: node.position.y },
+          data: {
+            kind: node.data.kind === 'action' ? 'ACTION' : 'TRIGGER',
+            metadata: node.data.metadata,
+          },
+        })),
+        edges,
+      });
     } finally {
       setSaving(false);
     }
@@ -167,9 +179,9 @@ export default function WorkflowDetail() {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={(connection) => setEdges((current) => addEdge(connection, current))}
-          onConnectEnd={(_event, connectionState: any) => {
+          onConnectEnd={(_event, connectionState) => {
             if (!connectionState.isValid && connectionState.fromNode) {
-              openActionSheet(connectionState.fromNode.id, connectionState.to ?? connectionState.from);
+              openActionSheet(connectionState.fromNode.id, connectionState.to ?? { x: 0, y: 0 });
             }
           }}
           onPaneClick={() => {

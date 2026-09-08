@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select"
 import { useState } from "react";
 import { SUPPORTED_ASSETS } from "common/types";
+import type { PriceTriggerMetadata, TimerNodeMetadata, TradingMetadata } from "common/types";
 
 
 
@@ -47,8 +48,7 @@ export const ActionSheet = ({
     onClose?: () => void
 }
 ) => {
-    // creating a state variable 
-    const [metadeta, setMetadata] = useState<any>({});
+    const [metadeta, setMetadata] = useState<Partial<TradingMetadata & PriceTriggerMetadata & TimerNodeMetadata>>({});
     const [selectedAction, setSelectedAction] = useState(SUPPORTED_ACTIONS[0].id);
     return <Sheet open={true} onOpenChange={(open) => {
         if (!open) onClose?.();
@@ -81,9 +81,9 @@ export const ActionSheet = ({
                 {(selectedAction === "hyperliquid" || selectedAction === "lighter" || selectedAction === "backpack") && <div className="space-y-4 rounded-lg border border-border p-4">
                     <div className="space-y-2">
                         <div className="text-sm font-medium">Type</div>
-                        <Select value={metadeta.asset} onValueChange={(value) => setMetadata((metadeta: any) => ({
+                        <Select value={metadeta.asset} onValueChange={(value) => setMetadata((metadeta) => ({
                                     ...metadeta,
-                                    type: value
+                                    type: value as TradingMetadata["type"]
                         }))}>
                             <SelectTrigger className="w-full">
                                 <SelectValue placeholder="Select an asset." />
@@ -102,7 +102,7 @@ export const ActionSheet = ({
                     
                     <div className="space-y-2">
                         <div className="text-sm font-medium">Symbol</div>
-                        <Select value={metadeta?.symbol} onValueChange={(value) => setMetadata((metadeta: any) => ({
+                        <Select value={metadeta?.symbol} onValueChange={(value) => setMetadata((metadeta) => ({
                                     ...metadeta,
                                     symbol: value
                         }))}>
@@ -123,7 +123,7 @@ export const ActionSheet = ({
 
                     <div className="space-y-2">
                         <div className="text-sm font-medium">Qty</div>
-                        <Input value={metadeta.time} onChange={(e) => setMetadata((metadeta: any) => ({
+                        <Input value={metadeta.time} onChange={(e) => setMetadata((metadeta) => ({
                             ...metadeta,
                             qty : Number(e.target.value)
                         }))}></Input>
