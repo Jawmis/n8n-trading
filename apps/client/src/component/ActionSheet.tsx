@@ -123,7 +123,7 @@ export const ActionSheet = ({
 
                     <div className="space-y-2">
                         <div className="text-sm font-medium">Qty</div>
-                        <Input value={metadeta.time} onChange={(e) => setMetadata((metadeta) => ({
+                        <Input type="number" min="0" value={metadeta.qty ?? ""} onChange={(e) => setMetadata((metadeta) => ({
                             ...metadeta,
                             qty : Number(e.target.value)
                         }))}></Input>
