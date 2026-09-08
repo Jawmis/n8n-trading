@@ -5,11 +5,13 @@ import { apiListWorkflows, apiSignout, type Workflow } from '@/lib/http';
 export default function Dashboard() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     apiListWorkflows()
       .then(setWorkflows)
+      .catch(() => setError('Could not load workflows. Please try again.'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -25,7 +27,12 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {loading ? (
+      {error ? (
+        <div className="flex items-center gap-3 text-sm text-red-600">
+          <p>{error}</p>
+          <button type="button" className="underline" onClick={() => window.location.reload()}>Retry</button>
+        </div>
+      ) : loading ? (
         <p className="text-muted-foreground">Loading...</p>
       ) : workflows.length === 0 ? (
         <p className="text-muted-foreground">No workflows yet. Create one to get started.</p>

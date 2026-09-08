@@ -7,11 +7,13 @@ export default function WorkflowExecutions() {
   const { workflowId } = useParams<{ workflowId: string }>();
   const [executions, setExecutions] = useState<WorkflowExecution[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!workflowId) return;
     apiListExecutions(workflowId)
       .then((result) => setExecutions(result.items))
+      .catch(() => setError('Could not load execution history. Please try again.'))
       .finally(() => setLoading(false));
   }, [workflowId]);
 
@@ -24,7 +26,9 @@ export default function WorkflowExecutions() {
       </div>
       <h1 className="text-2xl font-semibold mb-4">Executions</h1>
 
-      {loading ? (
+      {error ? (
+        <p className="text-red-600">{error}</p>
+      ) : loading ? (
         <p className="text-muted-foreground">Loading...</p>
       ) : executions.length === 0 ? (
         <p className="text-muted-foreground">No executions yet.</p>

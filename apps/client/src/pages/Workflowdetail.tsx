@@ -39,6 +39,8 @@ export default function WorkflowDetail() {
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [runMessage, setRunMessage] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [showTriggerSheet, setShowTriggerSheet] = useState(false);
   const [showActionSheet, setShowActionSheet] = useState(false);
   const [connectionSource, setConnectionSource] = useState<string | null>(null);
@@ -58,7 +60,7 @@ export default function WorkflowDetail() {
       );
       setEdges(wf.edges);
       if (wf.nodes.length === 0) setShowTriggerSheet(true);
-    });
+    }).catch(() => setLoadError('Could not load this workflow. Please try again.'));
   }, [workflowId]);
 
   function openActionSheet(source: string | null = null, position: { x: number; y: number } | null = null) {
@@ -101,6 +103,7 @@ export default function WorkflowDetail() {
   async function handleSave() {
     if (!workflowId) return;
     setSaving(true);
+    setSaveError(null);
     try {
       await apiUpdateWorkflow(workflowId, {
         nodes: nodes.map((node): WorkflowNode => ({
@@ -115,6 +118,8 @@ export default function WorkflowDetail() {
         })),
         edges,
       });
+    } catch {
+      setSaveError('Could not save workflow. Check the graph and try again.');
     } finally {
       setSaving(false);
     }
@@ -134,6 +139,7 @@ export default function WorkflowDetail() {
     }
   }
 
+  if (loadError) return <div className="p-6 text-red-600"><p>{loadError}</p><Link className="underline" to="/dashboard">Back to dashboard</Link></div>;
   if (!workflow) return <p className="p-6 text-muted-foreground">Loading workflow...</p>;
 
   return (
@@ -168,6 +174,7 @@ export default function WorkflowDetail() {
         </div>
       </div>
       {runMessage && <p className="px-4 py-2 text-sm text-muted-foreground">{runMessage}</p>}
+      {saveError && <p className="px-4 py-2 text-sm text-red-600">{saveError}</p>}
       <div className="flex-1 relative">
         <div className="absolute left-4 top-4 z-10 rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground shadow-sm">
           Drag from a node handle to add the next task
