@@ -11,7 +11,7 @@ export default function WorkflowExecutions() {
   useEffect(() => {
     if (!workflowId) return;
     apiListExecutions(workflowId)
-      .then(setExecutions)
+      .then((result) => setExecutions(result.items))
       .finally(() => setLoading(false));
   }, [workflowId]);
 
