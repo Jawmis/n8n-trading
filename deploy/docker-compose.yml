@@ -1,0 +1,64 @@
+services:
+  mongo:
+    image: mongo:8
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    restart: unless-stopped
+    environment:
+      MONGO_URL: mongodb://mongo:27017/trading
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY is required}
+      CLIENT_URL: ${CLIENT_URL:-http://localhost}
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  executor:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.executor
+    restart: unless-stopped
+    environment:
+      MONGO_URL: mongodb://mongo:27017/trading
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY is required}
+      EXECUTOR_HEALTH_PORT: 3001
+      TRADING_MODE: ${TRADING_MODE:-paper}
+      LIVE_TRADING_ENABLED: ${LIVE_TRADING_ENABLED:-false}
+      TRADING_KILL_SWITCH: ${TRADING_KILL_SWITCH:-true}
+      ALLOWED_TRADING_ASSETS: ${ALLOWED_TRADING_ASSETS:-SOL,BTC,ETH}
+      MAX_ORDER_QUANTITY: ${MAX_ORDER_QUANTITY:-0}
+      MAX_ORDER_NOTIONAL: ${MAX_ORDER_NOTIONAL:-0}
+    ports:
+      - "3001:3001"
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  client:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.client
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  mongo-data:
