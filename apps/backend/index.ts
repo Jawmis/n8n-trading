@@ -2,7 +2,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import { ExecutionModel, NodesModel, UserModel, WorkflowModel } from 'db/client';
 import jwt from "jsonwebtoken"; 
-import { SignupSchema,SigninSchema, CreateWorkflowSchema, UpdateWorkflowSchema } from 'common/types';
+import { SignupSchema,SigninSchema, CreateWorkflowSchema, UpdateWorkflowSchema, validateWorkflowGraph } from 'common/types';
 import { authMiddleware, JWT_AUDIENCE, JWT_ISSUER } from './middleware';
 import cors from 'cors';
 import { hashPassword, verifyPassword } from './password';
@@ -98,6 +98,11 @@ app.post("/workflow",authMiddleware, async (req, res) => {
         })
         return
     }
+    const graph = validateWorkflowGraph(data);
+    if (!graph.success) {
+        res.status(400).json({ message: graph.message });
+        return;
+    }
     try {
         const workflow = await WorkflowModel.create({
             userId,
@@ -121,6 +126,11 @@ app.put("/workflow/:workflowId", authMiddleware,async(req, res) => {
             message : "incorrect inputs"
         })
         return
+    }
+    const graph = validateWorkflowGraph(data);
+    if (!graph.success) {
+        res.status(400).json({ message: graph.message });
+        return;
     }
     try {
         const workflow = await WorkflowModel.findOneAndUpdate(
