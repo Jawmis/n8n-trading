@@ -13,5 +13,5 @@
   "peerDependencies": {
     "typescript": "^5"
   },
-  "scripts": { "test": "bun test" }
+  "scripts": { "check-types": "tsc --noEmit", "test": "bun test" }
 }
