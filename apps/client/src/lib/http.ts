@@ -44,10 +44,21 @@ api.interceptors.request.use((config) => {
   const token = getAuthToken();
   if (token) {
     config.headers = config.headers ?? {};
-    config.headers.Authorization = token;
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error: unknown) => {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      setAuthToken(null);
+      if (window.location.pathname !== "/auth") window.location.assign("/auth");
+    }
+    return Promise.reject(error);
+  },
+);
 
 // Route-specific helpers (one per backend route)
 export async function apiSignup(body: { username: string; password: string }): Promise<IdResponse> {

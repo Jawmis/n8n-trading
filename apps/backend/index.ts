@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import { ExecutionModel, NodesModel, UserModel, WorkflowModel } from 'db/client';
 import jwt from "jsonwebtoken"; 
 import { SignupSchema,SigninSchema, CreateWorkflowSchema, UpdateWorkflowSchema } from 'common/types';
-import { authMiddleware } from './middleware';
+import { authMiddleware, JWT_AUDIENCE, JWT_ISSUER } from './middleware';
 import cors from 'cors';
 import { hashPassword, verifyPassword } from './password';
 
@@ -18,7 +18,10 @@ app.use(cors({
     credentials: true,
 }));
 
-const JWT_SECRET = process.env.JWT_SECRET!;
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!process.env.MONGO_URL || !JWT_SECRET) {
+    throw new Error("MONGO_URL and JWT_SECRET are required");
+}
 
 app.post("/signup", async (req, res) => {
     const { success, data } = SignupSchema.safeParse(req.body);
@@ -61,9 +64,14 @@ app.post("/signin", async (req, res) => {
             }
             // return the user their jwt or token.
              
-        const token = jwt.sign({
-            id: user._id
-        }, JWT_SECRET);
+            const token = jwt.sign({
+                id: user._id
+            }, JWT_SECRET, {
+                algorithm: "HS256",
+                expiresIn: "1h",
+                issuer: JWT_ISSUER,
+                audience: JWT_AUDIENCE,
+            });
 
             res.json({
                 id: user._id,

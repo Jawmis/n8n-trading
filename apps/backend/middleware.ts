@@ -1,17 +1,38 @@
 import type { NextFunction, Request, Response } from "express";
 import jwt, { type JwtPayload } from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET!;
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_ISSUER = "n8n-trading-api";
+const JWT_AUDIENCE = "n8n-trading-client";
 
 export function authMiddleware(req: Request, res : Response, next: NextFunction) {
-    const header = req.headers["authorization"] as string;
+    if (!JWT_SECRET) {
+        res.status(500).json({ message: "Authentication is not configured" });
+        return;
+    }
+    const header = req.headers.authorization;
+    const token = header?.startsWith("Bearer ") ? header.slice(7).trim() : null;
+    if (!token) {
+        res.status(401).json({ message: "Authentication required" });
+        return;
+    }
     try {
-        const response = jwt.verify(header, JWT_SECRET) as JwtPayload;
+        const response = jwt.verify(token, JWT_SECRET, {
+            algorithms: ["HS256"],
+            issuer: JWT_ISSUER,
+            audience: JWT_AUDIENCE,
+        }) as JwtPayload;
+        if (typeof response.id !== "string") {
+            res.status(401).json({ message: "Invalid authentication token" });
+            return;
+        }
         req.userId = response.id;
         next();
-    } catch (e) {
-        res.status(403).json({
-            message : "You are not logged in!"
+    } catch {
+        res.status(401).json({
+            message : "Invalid or expired authentication token"
         })
     }
 }
+
+export { JWT_AUDIENCE, JWT_ISSUER };
