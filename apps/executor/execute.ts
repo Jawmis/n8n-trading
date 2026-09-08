@@ -51,6 +51,14 @@ export async function executeWorkflow(workflow: WorkflowLike, executionId?: unkn
     ? await ExecutionModel.findById(executionId)
     : await ExecutionModel.create({ workflowId: workflow._id, kind: "manual", status: status.pending, startTime: new Date() });
   if (!execution) throw new Error("Execution job not found");
+  const heartbeat = executionId
+    ? setInterval(() => {
+        void ExecutionModel.updateOne(
+          { _id: execution._id, status: "running" },
+          { $set: { leaseUntil: new Date(Date.now() + 60_000) } },
+        );
+      }, 10_000)
+    : undefined;
   try {
     await executeRecursive(workflow, trigger.id);
     await ExecutionModel.updateOne({ _id: execution._id }, { $set: { status: status.success, endTime: new Date(), leaseUntil: null } });
@@ -59,5 +67,7 @@ export async function executeWorkflow(workflow: WorkflowLike, executionId?: unkn
     const message = error instanceof Error ? error.message : String(error);
     await ExecutionModel.updateOne({ _id: execution._id }, { $set: { status: status.failure, endTime: new Date(), error: message, leaseUntil: null } });
     throw error;
+  } finally {
+    if (heartbeat) clearInterval(heartbeat);
   }
 }
