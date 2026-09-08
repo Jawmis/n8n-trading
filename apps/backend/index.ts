@@ -7,7 +7,13 @@ import { authMiddleware, JWT_AUDIENCE, JWT_ISSUER } from './middleware';
 import cors from 'cors';
 import { hashPassword, verifyPassword } from './password';
 
-mongoose.connect(process.env.MONGO_URL!);
+const JWT_SECRET = process.env.JWT_SECRET;
+const MONGO_URL = process.env.MONGO_URL;
+if (!MONGO_URL || !JWT_SECRET) {
+    throw new Error("MONGO_URL and JWT_SECRET are required");
+}
+
+void mongoose.connect(MONGO_URL);
 
 const app = express();
 
@@ -17,11 +23,6 @@ app.use(cors({
     origin: process.env.CLIENT_URL || "http://localhost:5173",
     credentials: true,
 }));
-
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!process.env.MONGO_URL || !JWT_SECRET) {
-    throw new Error("MONGO_URL and JWT_SECRET are required");
-}
 
 app.post("/signup", async (req, res) => {
     const { success, data } = SignupSchema.safeParse(req.body);
