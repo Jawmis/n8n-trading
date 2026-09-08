@@ -1,5 +1,6 @@
 import { ExecutionModel } from "db/client";
 import { dispatchAction } from "./executors";
+import { validateWorkflowGraph } from "common/types";
 
 export interface WorkflowNodeLike {
   id: string;
@@ -32,6 +33,8 @@ export async function executeRecursive(workflow: WorkflowLike, currentNodeId: st
 export async function executeWorkflow(workflow: WorkflowLike, executionId?: unknown) {
   const trigger = workflow.nodes.find((node) => String(node.data?.kind).toLowerCase() === "trigger");
   if (!trigger) throw new Error("Workflow has no trigger node");
+  const graph = validateWorkflowGraph(workflow);
+  if (!graph.success) throw new Error(`Workflow validation failed: ${graph.message}`);
   const execution = executionId
     ? await ExecutionModel.findById(executionId)
     : await ExecutionModel.create({ workflowId: workflow._id, kind: "manual", status: status.pending, startTime: new Date() });

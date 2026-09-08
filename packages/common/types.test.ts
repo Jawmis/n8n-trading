@@ -8,6 +8,12 @@ describe("workflow graph validation", () => {
     test("accepts a connected acyclic workflow", () => {
         expect(validateWorkflowGraph({ nodes: [timer(), action()], edges: [{ id: "e1", source: "trigger", target: "action" }] }).success).toBe(true);
     });
+    test("accepts branching action paths", () => {
+        expect(validateWorkflowGraph({ nodes: [timer(), action(), action("action-2")], edges: [
+            { id: "e1", source: "trigger", target: "action" },
+            { id: "e2", source: "trigger", target: "action-2" },
+        ] }).success).toBe(true);
+    });
     test.each([
         ["multiple triggers", [timer(), timer("trigger-2")], []],
         ["duplicate node IDs", [timer(), action("trigger")], []],
