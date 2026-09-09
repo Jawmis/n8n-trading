@@ -24,6 +24,7 @@ export type NodeKind = "price-trigger" | "timer" | "hyperliquid" | "backpack" | 
 
 interface NodeType{
   type: NodeKind,
+  credentialId?: string,
     data: {
       kind: "action" | "trigger",
       metadata: NodeMetadata,
@@ -103,13 +104,14 @@ export function CreateWorkflow() {
       {showActionSheet && <ActionSheet onClose={() => {
         setShowActionSheet(false);
         setSelectAction(null);
-      }} onSelect={(type, metadata) => {
+      }} onSelect={(type, metadata, credentialId) => {
         const nodeId = Math.random().toString();
         const startingNodeId = selectAction?.startingNodeId;
 
         setNodes((currentNodes) => [...currentNodes, {
           id: nodeId,
           type,
+          credentialId,
           data: {
             kind: "action",
             metadata,

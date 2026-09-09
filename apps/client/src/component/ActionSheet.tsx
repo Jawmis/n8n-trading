@@ -18,9 +18,10 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SUPPORTED_ASSETS } from "common/types";
 import type { PriceTriggerMetadata, TimerNodeMetadata, TradingMetadata } from "common/types";
+import { apiListCredentials, type Credential } from "@/lib/http";
 
 
 
@@ -36,12 +37,17 @@ export const ActionSheet = ({
     onSelect,
     onClose
 }: {
-    onSelect: (kind: NodeKind, metadata: NodeMetadata) => void,
+    onSelect: (kind: NodeKind, metadata: NodeMetadata, credentialId?: string) => void,
     onClose?: () => void
 }
 ) => {
     const [metadeta, setMetadata] = useState<Partial<TradingMetadata & PriceTriggerMetadata & TimerNodeMetadata>>({});
     const [selectedAction, setSelectedAction] = useState(SUPPORTED_ACTIONS[0].id);
+    const [credentials, setCredentials] = useState<Credential[]>([]);
+    const [selectedCredentialId, setSelectedCredentialId] = useState<string>();
+    useEffect(() => {
+        apiListCredentials().then(setCredentials).catch(() => setCredentials([]));
+    }, []);
     return <Sheet open={true} onOpenChange={(open) => {
         if (!open) onClose?.();
     }}>
@@ -70,7 +76,14 @@ export const ActionSheet = ({
                         </SelectContent>
                     </Select>
                 </div>
-                {(selectedAction === "hyperliquid" || selectedAction === "lighter" || selectedAction === "backpack") && <div className="space-y-4 rounded-lg border border-border p-4">
+                {selectedAction === "lighter" && <div className="space-y-4 rounded-lg border border-border p-4">
+                    <div className="space-y-2">
+                        <div className="text-sm font-medium">Credential</div>
+                        <Select value={selectedCredentialId} onValueChange={setSelectedCredentialId}>
+                            <SelectTrigger className="w-full"><SelectValue placeholder="Select a broker credential" /></SelectTrigger>
+                            <SelectContent><SelectGroup>{credentials.filter((credential) => credential.provider === selectedAction).map((credential) => <SelectItem key={credential._id} value={credential._id}>{credential.provider} · {credential._id.slice(-6)}</SelectItem>)}</SelectGroup></SelectContent>
+                        </Select>
+                    </div>
                     <div className="space-y-2">
                         <div className="text-sm font-medium">Type</div>
                         <Select value={metadeta.asset} onValueChange={(value) => setMetadata((metadeta) => ({
@@ -127,9 +140,10 @@ export const ActionSheet = ({
                 <Button onClick={() => {
                     onSelect(
                         selectedAction as NodeKind,
-                        metadeta as NodeMetadata
+                        metadeta as NodeMetadata,
+                        selectedCredentialId,
                     )
-                }} type="submit" className="w-full">Create Action</Button>
+                }} type="submit" disabled={!selectedCredentialId} className="w-full">Create Action</Button>
 
             </SheetFooter>
         </SheetContent>
