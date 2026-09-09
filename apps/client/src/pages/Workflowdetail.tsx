@@ -78,10 +78,10 @@ export default function WorkflowDetail() {
     setShowTriggerSheet(false);
   }
 
-  function addAction(type: NodeKind, metadata: NodeMetadata) {
+  function addAction(type: NodeKind, metadata: NodeMetadata, credentialId?: string) {
     const nodeId = crypto.randomUUID();
     const position = actionPosition ?? { x: 360 + nodes.length * 40, y: 220 + nodes.length * 30 };
-    setNodes((current) => [...current, { id: nodeId, type, position, data: { kind: 'action', metadata } }]);
+    setNodes((current) => [...current, { id: nodeId, type, position, data: { kind: 'action', metadata }, credentialId }]);
     if (connectionSource) {
       setEdges((current) => [...current, { id: `${connectionSource}-${nodeId}`, source: connectionSource, target: nodeId }]);
     }
@@ -109,6 +109,7 @@ export default function WorkflowDetail() {
         nodes: nodes.map((node): WorkflowNode => ({
           nodeId: node.type ?? '',
           type: node.type ?? '',
+          credentialId: (node as Node & { credentialId?: string }).credentialId,
           id: node.id,
           position: { x: node.position.x, y: node.position.y },
           data: {
