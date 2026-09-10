@@ -10,6 +10,7 @@ beforeEach(() => {
   delete process.env.TRADING_KILL_SWITCH;
   delete process.env.MAX_ORDER_LEVERAGE;
   delete process.env.MAX_ORDER_SLIPPAGE_BPS;
+  delete process.env.MAX_POSITION_NOTIONAL;
   process.env.MAX_ORDER_QUANTITY = "2";
   process.env.MAX_ORDER_NOTIONAL = "100000";
   process.env.ALLOWED_TRADING_ASSETS = "BTC,ETH";
@@ -44,5 +45,11 @@ describe("trade risk policy", () => {
   test("does not apply limit slippage to market orders without a requested price", () => {
     process.env.MAX_ORDER_SLIPPAGE_BPS = "0";
     expect(validateTradeRisk(order, 100.123).mode).toBe("paper");
+  });
+  test("fails closed and enforces projected position notional", () => {
+    process.env.MAX_POSITION_NOTIONAL = "150";
+    expect(() => validateTradeRisk(order, 100)).toThrow("position is required");
+    expect(() => validateTradeRisk(order, 100, 100)).toThrow("Projected position");
+    expect(validateTradeRisk({ ...order, reduceOnly: true }, 100, 100).maxPositionNotional).toBe(150);
   });
 });

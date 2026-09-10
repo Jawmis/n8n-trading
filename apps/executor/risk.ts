@@ -28,7 +28,7 @@ function numberEnv(name: string, fallback: number) {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
-export function validateTradeRisk(order: LighterOrder, marketPrice: number) {
+export function validateTradeRisk(order: LighterOrder, marketPrice: number, currentPositionNotional?: number) {
   const mode: TradingMode = process.env.TRADING_MODE === "live" ? "live" : "paper";
   const liveTradingEnabled = boolEnv("LIVE_TRADING_ENABLED", false);
   const killSwitch = boolEnv("TRADING_KILL_SWITCH", false);
@@ -37,6 +37,7 @@ export function validateTradeRisk(order: LighterOrder, marketPrice: number) {
   const maxNotional = numberEnv("MAX_ORDER_NOTIONAL", 0);
   const maxLeverage = numberEnv("MAX_ORDER_LEVERAGE", 1);
   const maxSlippageBps = numberEnv("MAX_ORDER_SLIPPAGE_BPS", 0);
+  const maxPositionNotional = numberEnv("MAX_POSITION_NOTIONAL", 0);
 
   if (killSwitch) reject("KILL_SWITCH", "Trading kill switch is enabled");
   if (mode === "live" && !liveTradingEnabled) reject("LIVE_TRADING_DISABLED", "Live trading is disabled");
@@ -47,11 +48,17 @@ export function validateTradeRisk(order: LighterOrder, marketPrice: number) {
   if (maxQuantity <= 0 || order.quantity > maxQuantity) reject("QUANTITY_LIMIT", "Order quantity exceeds the configured risk limit", { quantity: order.quantity, maxQuantity });
   const notional = order.quantity * marketPrice;
   if (!Number.isFinite(marketPrice) || marketPrice <= 0 || notional > maxNotional) reject("NOTIONAL_LIMIT", "Order notional exceeds the configured risk limit", { notional, maxNotional });
+  if (maxPositionNotional > 0) {
+    if (!Number.isFinite(currentPositionNotional)) reject("POSITION_UNAVAILABLE", "Current position is required for the configured position limit");
+    const position = currentPositionNotional!;
+    const projected = order.reduceOnly ? position : position + (order.side === "long" ? notional : -notional);
+    if (Math.abs(projected) > maxPositionNotional) reject("POSITION_LIMIT", "Projected position exceeds the configured risk limit", { currentPositionNotional, projected, maxPositionNotional });
+  }
   if (order.price !== undefined) {
     const slippageBps = Math.abs(order.price - marketPrice) / marketPrice * 10_000;
     if (!Number.isFinite(order.price) || order.price <= 0 || slippageBps > maxSlippageBps) {
       reject("SLIPPAGE_LIMIT", "Order price exceeds the configured slippage limit", { price: order.price, marketPrice, slippageBps, maxSlippageBps });
     }
   }
-  return { mode, maxQuantity, maxNotional, maxLeverage, maxSlippageBps };
+  return { mode, maxQuantity, maxNotional, maxLeverage, maxSlippageBps, maxPositionNotional };
 }

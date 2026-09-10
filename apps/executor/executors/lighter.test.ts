@@ -12,6 +12,7 @@ beforeEach(() => {
   delete process.env.TRADING_MODE;
   delete process.env.LIVE_TRADING_ENABLED;
   delete process.env.TRADING_KILL_SWITCH;
+  delete process.env.MAX_POSITION_NOTIONAL;
   process.env.MAX_ORDER_QUANTITY = "2";
   process.env.MAX_ORDER_NOTIONAL = "100000";
   process.env.MAX_ORDER_SLIPPAGE_BPS = "0";

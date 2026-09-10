@@ -1,9 +1,9 @@
 import type { WorkflowNodeLike } from "../execute";
 import { validateTradeRisk } from "../risk";
-import { ApiClient, MarketHelper, OrderApi, SignerClient, resolveNetworkFromEnv } from "lighter-ts-sdk";
+import { AccountApi, ApiClient, MarketHelper, OrderApi, SignerClient, resolveNetworkFromEnv } from "lighter-ts-sdk";
 const assets = new Set(["SOL", "BTC", "ETH"]);
 export interface LighterOrder { asset: "SOL" | "BTC" | "ETH"; quantity: number; side: "long" | "short"; price?: number; leverage?: number; reduceOnly?: boolean; apiKey: string; accountIndex: string | number; apiIndex: string | number; }
-export interface LighterClient { getMarketPrice(asset: string): Promise<{ price: number; priceDecimals?: number; quantityDecimals?: number }>; placeOrder(order: LighterOrder & { price: number }): Promise<unknown>; close?: () => Promise<void>; }
+export interface LighterClient { getMarketPrice(asset: string): Promise<{ price: number; priceDecimals?: number; quantityDecimals?: number }>; getPositionNotional?: (asset: string) => Promise<number>; placeOrder(order: LighterOrder & { price: number }): Promise<unknown>; close?: () => Promise<void>; }
 
 type Market = { helper: MarketHelper; priceDecimals: number; quantityDecimals: number };
 
@@ -11,7 +11,9 @@ type Market = { helper: MarketHelper; priceDecimals: number; quantityDecimals: n
 export class SdkLighterClient implements LighterClient {
   private readonly apiClient: ApiClient;
   private readonly orderApi: OrderApi;
+  private readonly accountApi: AccountApi;
   private readonly signer?: SignerClient;
+  private readonly accountIndex: number;
   private readonly markets = new Map<string, Market>();
 
   constructor(credentials: { apiPrivateKey?: string; apiKey?: string; accountIndex: string | number; apiIndex: string | number }) {
@@ -19,6 +21,8 @@ export class SdkLighterClient implements LighterClient {
     const apiUrl = process.env.LIGHTER_API_URL ?? network.apiUrl;
     this.apiClient = new ApiClient({ host: apiUrl });
     this.orderApi = new OrderApi(this.apiClient);
+    this.accountApi = new AccountApi(this.apiClient);
+    this.accountIndex = Number(credentials.accountIndex);
     const privateKey = credentials.apiPrivateKey ?? credentials.apiKey;
     if (privateKey) {
       this.signer = new SignerClient({ url: apiUrl, network, privateKey, accountIndex: Number(credentials.accountIndex), apiKeyIndex: Number(credentials.apiIndex) });
@@ -45,6 +49,16 @@ export class SdkLighterClient implements LighterClient {
     const price = market.helper.unitsToPrice(market.helper.lastPrice);
     if (!Number.isFinite(price) || price <= 0) throw new Error(`Lighter returned an invalid ${asset} price`);
     return { price, priceDecimals: market.priceDecimals, quantityDecimals: market.quantityDecimals };
+  }
+
+  async getPositionNotional(asset: string) {
+    const account = await this.accountApi.getAccount({ by: "index", value: String(this.accountIndex) });
+    const position = account.positions.find((candidate) => candidate.symbol.toUpperCase().startsWith(asset.toUpperCase()));
+    if (!position) return 0;
+    const value = Number(position.position_value);
+    const sign = Number(position.sign) < 0 ? -1 : 1;
+    if (!Number.isFinite(value)) throw new Error(`Lighter returned an invalid ${asset} position`);
+    return value * sign;
   }
 
   async placeOrder(order: LighterOrder & { price: number }) {
@@ -102,7 +116,11 @@ export async function executeLighter(node: WorkflowNodeLike, client?: LighterCli
   const executableOrder = { ...order, quantity: round(order.quantity, market.quantityDecimals ?? 4), price: round(order.price ?? market.price, market.priceDecimals ?? 2) };
   // Validate slippage only against a user-specified limit. The rounded market
   // execution price is an exchange encoding detail, not a user price bound.
-  const risk = validateTradeRisk({ ...executableOrder, price: order.price }, market.price);
+  const maxPositionNotional = Number(process.env.MAX_POSITION_NOTIONAL ?? 0);
+  const currentPositionNotional = maxPositionNotional > 0 && exchange.getPositionNotional
+    ? await exchange.getPositionNotional(order.asset)
+    : undefined;
+  const risk = validateTradeRisk({ ...executableOrder, price: order.price }, market.price, currentPositionNotional);
   if (risk.mode === "paper") return { mode: "paper", order: { ...executableOrder, apiKey: "[redacted]" } };
   return exchange.placeOrder(executableOrder);
 }
