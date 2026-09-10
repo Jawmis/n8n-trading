@@ -1,7 +1,7 @@
 import express from 'express';
 import type { ErrorRequestHandler } from 'express';
 import mongoose from 'mongoose';
-import { CredentialModel, ExecutionModel, NodesModel, UserModel, WorkflowModel } from 'db/client';
+import { CredentialModel, ExecutionModel, NodesModel, UserModel, WorkflowAuditModel, WorkflowModel } from 'db/client';
 import { decryptCredential, encryptCredential } from 'db/credentials';
 import jwt from "jsonwebtoken"; 
 import { SignupSchema,SigninSchema, CreateWorkflowSchema, UpdateWorkflowSchema, validateWorkflowGraph } from 'common/types';
@@ -20,6 +20,15 @@ const CredentialPayloadSchema = z.object({
     provider: z.literal("lighter"),
     secret: z.record(z.string(), z.unknown()).refine((secret) => Object.keys(secret).length > 0),
 }).strict();
+
+async function recordWorkflowAudit(userId: string | undefined, workflowId: mongoose.Types.ObjectId | string, action: string, metadata?: Record<string, unknown>) {
+    if (!userId) return;
+    try {
+        await WorkflowAuditModel.create({ workflowId, userId, action, metadata });
+    } catch (error) {
+        console.error(JSON.stringify({ event: "workflow_audit_failed", action, reason: error instanceof Error ? error.message : String(error) }));
+    }
+}
 
 function lighterCredentialError(secret: Record<string, unknown>) {
     if (typeof secret.apiKey !== "string" || secret.apiKey.length === 0) return "Lighter credential requires apiKey";
@@ -189,6 +198,7 @@ app.post("/workflow",authMiddleware, async (req, res) => {
         res.json({
             id : workflow._id
         })
+        await recordWorkflowAudit(userId, workflow._id, "workflow.created", { name: workflow.name });
     } catch (e) {
         res.status(500).json({
             message : "Failed to create workflow"
@@ -228,6 +238,7 @@ app.put("/workflow/:workflowId", authMiddleware,async(req, res) => {
         res.json({
             id : workflow._id
         })
+        await recordWorkflowAudit(req.userId, workflow._id, "workflow.updated", { enabled: workflow.enabled });
     } catch (e) {
         res.status(500).json({
             message : "Failed to update workflow"
@@ -266,6 +277,7 @@ app.post("/workflow/:workflowId/execute", authMiddleware, async (req, res) => {
             status: "pending",
             queueKey: `${workflow._id}:manual`,
         });
+        await recordWorkflowAudit(req.userId, workflow._id, "execution.queued", { kind: "manual" });
         res.json({ message: "Workflow queued for execution" });
     } catch (error) {
         if ((error as { code?: number })?.code === 11000) {
@@ -322,6 +334,7 @@ app.post("/workflow/:workflowId/duplicate", authMiddleware, async (req, res) => 
         edges: value.edges,
         priceState: {},
     });
+    await recordWorkflowAudit(req.userId, duplicate._id, "workflow.duplicated", { sourceWorkflowId: source._id.toString() });
     res.status(201).json({ id: duplicate._id });
 });
 
@@ -335,6 +348,7 @@ app.delete("/workflow/:workflowId", authMiddleware, async (req, res) => {
         res.status(404).json({ message: "Workflow not found" });
         return;
     }
+    await recordWorkflowAudit(req.userId, deleted._id, "workflow.deleted", { name: deleted.name });
     await ExecutionModel.deleteMany({ workflowId: deleted._id });
     res.status(204).send();
 });
@@ -498,6 +512,20 @@ app.get("/workflow/executions/:workflowId",authMiddleware, async(req, res) => {
     res.json({ items: executions, page, pageSize, total, totalPages: Math.ceil(total / pageSize) });
 });
 
+app.get("/workflow/:workflowId/audit", authMiddleware, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.workflowId)) {
+        res.status(404).json({ message: "Workflow not found" });
+        return;
+    }
+    const owned = await WorkflowModel.exists({ _id: req.params.workflowId, userId: req.userId });
+    if (!owned) {
+        res.status(404).json({ message: "Workflow not found" });
+        return;
+    }
+    const events = await WorkflowAuditModel.find({ workflowId: req.params.workflowId }).sort({ createdAt: -1 }).limit(100).lean();
+    res.json(events);
+});
+
 app.post("/workflow/executions/:executionId/cancel", authMiddleware, async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.executionId)) {
         res.status(404).json({ message: "Execution not found" });
@@ -517,6 +545,7 @@ app.post("/workflow/executions/:executionId/cancel", authMiddleware, async (req,
         res.status(409).json({ message: "Execution is already complete" });
         return;
     }
+    await recordWorkflowAudit(req.userId, execution.workflowId, "execution.cancelled", { executionId: execution._id.toString() });
     res.json({ id: updated._id, status: updated.status });
 });
 
@@ -535,6 +564,7 @@ app.post("/workflow/executions/:executionId/retry", authMiddleware, async (req, 
         return;
     }
     const retry = await ExecutionModel.create({ workflowId: execution.workflowId, kind: execution.kind, status: "pending", queueKey: `${execution.workflowId}:retry:${randomUUID()}` });
+    await recordWorkflowAudit(req.userId, execution.workflowId, "execution.retried", { executionId: execution._id.toString(), retryId: retry._id.toString() });
     res.status(202).json({ id: retry._id, status: retry.status });
 });
 

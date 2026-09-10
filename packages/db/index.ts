@@ -135,6 +135,14 @@ const WorkflowSchema = new Schema({
 });
 WorkflowSchema.index({ userId: 1 });
 
+const WorkflowAuditSchema = new Schema({
+    workflowId: { type: mongoose.Types.ObjectId, required: true, ref: "Workflows" },
+    userId: { type: mongoose.Types.ObjectId, required: true, ref: "Users" },
+    action: { type: String, required: true },
+    metadata: { type: Schema.Types.Mixed },
+}, { timestamps: true });
+WorkflowAuditSchema.index({ workflowId: 1, createdAt: -1 });
+
 const CredentialsTypeSchema = new Schema({
     title: {
         type: String,
@@ -215,5 +223,6 @@ ExecutionSchema.index({ status: 1, leaseUntil: 1 });
 export const UserModel = mongoose.model("Users", UserSchema);
 export const CredentialModel = mongoose.model("Credentials", CredentialSchema);
 export const WorkflowModel = mongoose.model("Workflows", WorkflowSchema);
+export const WorkflowAuditModel = mongoose.model("WorkflowAudits", WorkflowAuditSchema);
 export const NodesModel = mongoose.model("Nodes", NodesSchema);
 export const ExecutionModel = mongoose.model("Executions", ExecutionSchema);
