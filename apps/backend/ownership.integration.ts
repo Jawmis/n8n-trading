@@ -140,4 +140,12 @@ describe("workflow ownership integration", () => {
     expect((await request(`/credentials/${credentialId}`, { method: "DELETE" }, userA)).status).toBe(404);
     expect((await request(`/credentials/${credentialId}`, { method: "DELETE" })).status).toBe(204);
   });
+
+  integrationTest("revokes the current token on signout", async () => {
+    expect((await request("/signout", { method: "POST" })).status).toBe(204);
+    const afterSignout = await request("/credentials");
+    expect(afterSignout.status).toBe(401);
+    const body = await afterSignout.json() as { message?: string };
+    expect(body.message).toContain("revoked");
+  });
 });
