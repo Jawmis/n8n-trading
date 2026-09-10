@@ -35,11 +35,23 @@ export function validateTradeRisk(order: LighterOrder, marketPrice: number) {
   const allowedAssets = new Set((process.env.ALLOWED_TRADING_ASSETS ?? "SOL,BTC,ETH").split(",").map((asset) => asset.trim().toUpperCase()).filter(Boolean));
   const maxQuantity = numberEnv("MAX_ORDER_QUANTITY", 0);
   const maxNotional = numberEnv("MAX_ORDER_NOTIONAL", 0);
+  const maxLeverage = numberEnv("MAX_ORDER_LEVERAGE", 1);
+  const maxSlippageBps = numberEnv("MAX_ORDER_SLIPPAGE_BPS", 0);
 
   if (killSwitch) reject("KILL_SWITCH", "Trading kill switch is enabled");
   if (mode === "live" && !liveTradingEnabled) reject("LIVE_TRADING_DISABLED", "Live trading is disabled");
   if (!allowedAssets.has(order.asset)) reject("ASSET_NOT_ALLOWED", `Trading asset is not allowed: ${order.asset}`, { asset: order.asset });
+  if (order.leverage !== undefined && (!Number.isFinite(order.leverage) || order.leverage <= 0 || order.leverage > maxLeverage)) {
+    reject("LEVERAGE_LIMIT", "Order leverage exceeds the configured risk limit", { leverage: order.leverage, maxLeverage });
+  }
   if (maxQuantity <= 0 || order.quantity > maxQuantity) reject("QUANTITY_LIMIT", "Order quantity exceeds the configured risk limit", { quantity: order.quantity, maxQuantity });
-  if (!Number.isFinite(marketPrice) || marketPrice <= 0 || order.quantity * marketPrice > maxNotional) reject("NOTIONAL_LIMIT", "Order notional exceeds the configured risk limit", { notional: order.quantity * marketPrice, maxNotional });
-  return { mode, maxQuantity, maxNotional };
+  const notional = order.quantity * marketPrice;
+  if (!Number.isFinite(marketPrice) || marketPrice <= 0 || notional > maxNotional) reject("NOTIONAL_LIMIT", "Order notional exceeds the configured risk limit", { notional, maxNotional });
+  if (order.price !== undefined) {
+    const slippageBps = Math.abs(order.price - marketPrice) / marketPrice * 10_000;
+    if (!Number.isFinite(order.price) || order.price <= 0 || slippageBps > maxSlippageBps) {
+      reject("SLIPPAGE_LIMIT", "Order price exceeds the configured slippage limit", { price: order.price, marketPrice, slippageBps, maxSlippageBps });
+    }
+  }
+  return { mode, maxQuantity, maxNotional, maxLeverage, maxSlippageBps };
 }

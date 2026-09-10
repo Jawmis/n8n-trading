@@ -1,7 +1,7 @@
 import type { WorkflowNodeLike } from "../execute";
 import { validateTradeRisk } from "../risk";
 const assets = new Set(["SOL", "BTC", "ETH"]);
-export interface LighterOrder { asset: "SOL" | "BTC" | "ETH"; quantity: number; side: "long" | "short"; price?: number; apiKey: string; accountIndex: string | number; apiIndex: string | number; }
+export interface LighterOrder { asset: "SOL" | "BTC" | "ETH"; quantity: number; side: "long" | "short"; price?: number; leverage?: number; reduceOnly?: boolean; apiKey: string; accountIndex: string | number; apiIndex: string | number; }
 export interface LighterClient { getMarketPrice(asset: string): Promise<{ price: number; priceDecimals?: number; quantityDecimals?: number }>; placeOrder(order: LighterOrder & { price: number }): Promise<unknown>; }
 
 export function parseLighterOrder(node: WorkflowNodeLike): LighterOrder {
@@ -13,7 +13,9 @@ export function parseLighterOrder(node: WorkflowNodeLike): LighterOrder {
   if (!Number.isFinite(quantity) || quantity <= 0) throw new Error("Lighter quantity must be greater than zero");
   if (!["long", "short", "ask", "bid"].includes(side)) throw new Error("Lighter order side must be long/short");
   if (!credentials.apiKey || credentials.accountIndex === undefined || credentials.apiIndex === undefined) throw new Error("Lighter credentials require apiKey, accountIndex, and apiIndex");
-  return { asset: asset as LighterOrder["asset"], quantity, side: side === "bid" ? "long" : side === "ask" ? "short" : side as "long" | "short", apiKey: String(credentials.apiKey), accountIndex: credentials.accountIndex as string | number, apiIndex: credentials.apiIndex as string | number };
+  const leverage = metadata.leverage === undefined ? undefined : Number(metadata.leverage);
+  if (leverage !== undefined && (!Number.isFinite(leverage) || leverage <= 0)) throw new Error("Lighter leverage must be greater than zero");
+  return { asset: asset as LighterOrder["asset"], quantity, side: side === "bid" ? "long" : side === "ask" ? "short" : side as "long" | "short", price: metadata.price === undefined ? undefined : Number(metadata.price), leverage, reduceOnly: metadata.reduceOnly === true, apiKey: String(credentials.apiKey), accountIndex: credentials.accountIndex as string | number, apiIndex: credentials.apiIndex as string | number };
 }
 
 export async function executeLighter(node: WorkflowNodeLike, client?: LighterClient) {
@@ -22,9 +24,9 @@ export async function executeLighter(node: WorkflowNodeLike, client?: LighterCli
   if (!exchange) throw new Error("No Lighter client configured (inject one or set globalThis.LIGHTER_CLIENT)");
   const market = await exchange.getMarketPrice(order.asset);
   if (!Number.isFinite(market.price) || market.price <= 0) throw new Error("Lighter returned an invalid market price");
-  const risk = validateTradeRisk(order, market.price);
   const round = (value: number, decimals: number) => Number(value.toFixed(decimals));
   const executableOrder = { ...order, quantity: round(order.quantity, market.quantityDecimals ?? 4), price: round(order.price ?? market.price, market.priceDecimals ?? 2) };
+  const risk = validateTradeRisk(executableOrder, market.price);
   if (risk.mode === "paper") return { mode: "paper", order: { ...executableOrder, apiKey: "[redacted]" } };
   return exchange.placeOrder(executableOrder);
 }

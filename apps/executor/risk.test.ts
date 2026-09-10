@@ -8,6 +8,8 @@ beforeEach(() => {
   delete process.env.TRADING_MODE;
   delete process.env.LIVE_TRADING_ENABLED;
   delete process.env.TRADING_KILL_SWITCH;
+  delete process.env.MAX_ORDER_LEVERAGE;
+  delete process.env.MAX_ORDER_SLIPPAGE_BPS;
   process.env.MAX_ORDER_QUANTITY = "2";
   process.env.MAX_ORDER_NOTIONAL = "100000";
   process.env.ALLOWED_TRADING_ASSETS = "BTC,ETH";
@@ -31,5 +33,12 @@ describe("trade risk policy", () => {
     expect(() => validateTradeRisk({ ...order, asset: "SOL" }, 100)).toThrow("not allowed");
     expect(() => validateTradeRisk({ ...order, quantity: 3 }, 100)).toThrow("quantity");
     expect(() => validateTradeRisk(order, 100_001)).toThrow("notional");
+  });
+  test("rejects excessive leverage and limit-price slippage", () => {
+    process.env.MAX_ORDER_LEVERAGE = "2";
+    process.env.MAX_ORDER_SLIPPAGE_BPS = "50";
+    expect(() => validateTradeRisk({ ...order, leverage: 3 }, 100)).toThrow("leverage");
+    expect(() => validateTradeRisk({ ...order, price: 101 }, 100)).toThrow("slippage");
+    expect(validateTradeRisk({ ...order, leverage: 2, price: 100.4 }, 100).maxLeverage).toBe(2);
   });
 });
