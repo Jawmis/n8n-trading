@@ -18,7 +18,7 @@ export class SdkLighterClient implements LighterClient {
 
   constructor(credentials: { apiPrivateKey?: string; apiKey?: string; accountIndex: string | number; apiIndex: string | number }) {
     const network = resolveNetworkFromEnv();
-    const apiUrl = process.env.LIGHTER_API_URL ?? network.apiUrl;
+    const apiUrl = process.env.LIGHTER_API_URL || network.apiUrl;
     this.apiClient = new ApiClient({ host: apiUrl });
     this.orderApi = new OrderApi(this.apiClient);
     this.accountApi = new AccountApi(this.apiClient);
