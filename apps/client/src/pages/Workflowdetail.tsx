@@ -21,6 +21,7 @@ import { Lighter } from '@/nodes/actions/Lighter';
 import { Backpack } from '@/nodes/actions/Backpack';
 import { HyperLiquid } from '@/nodes/actions/Hyperliquid';
 import type { NodeKind, NodeMetadata } from '@/component/CreateWorkflow';
+import { validateWorkflowGraph } from 'common/types';
 
 const nodeTypes = {
   timer: Timer,
@@ -105,7 +106,7 @@ export default function WorkflowDetail() {
     setSaving(true);
     setSaveError(null);
     try {
-      await apiUpdateWorkflow(workflowId, {
+      const payload = {
         nodes: nodes.map((node): WorkflowNode => ({
           nodeId: node.type ?? '',
           type: node.type ?? '',
@@ -118,7 +119,13 @@ export default function WorkflowDetail() {
           },
         })),
         edges,
-      });
+      };
+      const validation = validateWorkflowGraph(payload);
+      if (!validation.success) {
+        setSaveError(validation.message);
+        return;
+      }
+      await apiUpdateWorkflow(workflowId, payload);
     } catch {
       setSaveError('Could not save workflow. Check the graph and try again.');
     } finally {
@@ -128,6 +135,25 @@ export default function WorkflowDetail() {
 
   async function handleRun() {
     if (!workflowId) return;
+    const payload = {
+      nodes: nodes.map((node): WorkflowNode => ({
+        nodeId: node.type ?? '',
+        type: node.type ?? '',
+        credentialId: (node as Node & { credentialId?: string }).credentialId,
+        id: node.id,
+        position: { x: node.position.x, y: node.position.y },
+        data: {
+          kind: String(node.data.kind).toUpperCase() as 'ACTION' | 'TRIGGER',
+          metadata: node.data.metadata,
+        },
+      })),
+      edges,
+    };
+    const validation = validateWorkflowGraph(payload);
+    if (!validation.success) {
+      setRunMessage(validation.message);
+      return;
+    }
     setRunning(true);
     setRunMessage(null);
     try {

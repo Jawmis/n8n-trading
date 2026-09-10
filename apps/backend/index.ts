@@ -191,6 +191,15 @@ app.post("/workflow/:workflowId/execute", authMiddleware, async (req, res) => {
             res.status(404).json({ message: "Workflow not found" });
             return;
         }
+        const stored = workflow.toObject();
+        const graph = validateWorkflowGraph({
+            nodes: stored.nodes.map(({ credentials: _credentials, ...node }) => node),
+            edges: stored.edges,
+        });
+        if (!graph.success) {
+            res.status(400).json({ message: graph.message });
+            return;
+        }
         await ExecutionModel.create({
             workflowId: workflow._id,
             kind: "manual",
