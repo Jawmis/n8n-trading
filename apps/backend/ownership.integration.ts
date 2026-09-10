@@ -71,10 +71,14 @@ describe("workflow ownership integration", () => {
   });
 
   integrationTest("denies another user workflow reads, updates, runs, and history", async () => {
+    const validWorkflow = {
+      nodes: [{ nodeId: "timer", type: "timer", id: "trigger", position: { x: 0, y: 0 }, data: { kind: "TRIGGER", metadata: { time: 60 } } }],
+      edges: [],
+    };
     const workflow = await request(`/workflow/${workflowId}`);
     expect(workflow.status).toBe(404);
 
-    const update = await request(`/workflow/${workflowId}`, { method: "PUT", body: JSON.stringify({ nodes: [], edges: [] }) });
+    const update = await request(`/workflow/${workflowId}`, { method: "PUT", body: JSON.stringify(validWorkflow) });
     expect(update.status).toBe(404);
 
     const execute = await request(`/workflow/${workflowId}/execute`, { method: "POST" });
