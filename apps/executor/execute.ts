@@ -3,6 +3,7 @@ import { CredentialModel, ExecutionModel } from "db/client";
 import { decryptCredential } from "db/credentials";
 import { dispatchAction } from "./executors";
 import { validateWorkflowGraph } from "common/types";
+import { TradeRiskRejection } from "./risk";
 
 export interface WorkflowNodeLike {
   id: string;
@@ -80,7 +81,9 @@ export async function executeWorkflow(workflow: WorkflowLike, executionId?: unkn
     if (completed.modifiedCount === 0) throw new Error("Execution timed out");
     return execution._id;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = error instanceof TradeRiskRejection
+      ? JSON.stringify({ code: error.code, message: error.message, details: error.details })
+      : error instanceof Error ? error.message : String(error);
     await ExecutionModel.updateOne({ _id: execution._id, status: "running" }, { $set: { status: status.failure, endTime: new Date(), error: message, leaseUntil: null }, $unset: { queueKey: 1 } });
     throw error;
   } finally {

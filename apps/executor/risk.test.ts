@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { validateTradeRisk } from "./risk";
+import { TradeRiskRejection, validateTradeRisk } from "./risk";
 import type { LighterOrder } from "./executors/lighter";
 
 const order: LighterOrder = { asset: "BTC", quantity: 1, side: "long", apiKey: "secret", accountIndex: 1, apiIndex: 1 };
@@ -18,6 +18,11 @@ describe("trade risk policy", () => {
   test("rejects disabled live trading", () => {
     process.env.TRADING_MODE = "live";
     expect(() => validateTradeRisk(order, 100)).toThrow("Live trading is disabled");
+    try {
+      validateTradeRisk(order, 100);
+    } catch (error) {
+      expect(error).toBeInstanceOf(TradeRiskRejection);
+    }
   });
   test("rejects the kill switch, disallowed assets, quantity, and notional", () => {
     process.env.TRADING_KILL_SWITCH = "true";
