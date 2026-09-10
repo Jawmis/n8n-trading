@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.1
+          bun-version: 1.4.0
       - run: bun install --frozen-lockfile
       - run: bun run test
       - run: cd apps/backend && MONGO_URL=mongodb://127.0.0.1:27017/trading-ci JWT_SECRET=ci-test-secret CREDENTIAL_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= bun run test:integration
