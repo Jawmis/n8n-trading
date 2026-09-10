@@ -137,7 +137,7 @@ export async function apiListWorkflows(): Promise<Workflow[]> {
   return res.data;
 }
 
-export type WorkflowExecution = { _id?: string; id?: string; status?: string; startTime?: string; endTime?: string; error?: string };
+export type WorkflowExecution = { _id?: string; id?: string; status?: string; startTime?: string; endTime?: string; error?: string; results?: Array<{ nodeId: string; result: unknown }> };
 export type PaginatedExecutions = { items: WorkflowExecution[]; page: number; pageSize: number; total: number; totalPages: number };
 
 export async function apiListExecutions(workflowId: string, page = 1, pageSize = 25): Promise<PaginatedExecutions> {

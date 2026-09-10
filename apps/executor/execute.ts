@@ -21,6 +21,7 @@ export interface WorkflowLike {
   edges: { source: string; target: string }[];
   priceState?: Record<string, number>;
 }
+export type ActionResult = { nodeId: string; result: unknown };
 const status = { pending: "pending", success: "success", failure: "failure" } as const;
 const isAction = (node: WorkflowNodeLike) => String(node.data?.kind).toLowerCase() === "action";
 const executionTimeoutMs = () => {
@@ -28,24 +29,27 @@ const executionTimeoutMs = () => {
   return Number.isFinite(configured) && configured > 0 ? configured : 300_000;
 };
 
-export async function executeRecursive(workflow: WorkflowLike, currentNodeId: string, visited = new Set<string>()): Promise<void> {
-  if (visited.has(currentNodeId)) return;
+export async function executeRecursive(workflow: WorkflowLike, currentNodeId: string, visited = new Set<string>()): Promise<ActionResult[]> {
+  if (visited.has(currentNodeId)) return [];
   visited.add(currentNodeId);
   const children = workflow.edges.filter((edge) => edge.source === currentNodeId)
     .map((edge) => workflow.nodes.find((node) => node.id === edge.target))
     .filter((node): node is WorkflowNodeLike => Boolean(node));
-  await Promise.all(children.map(async (node) => {
+  const results = await Promise.all(children.map(async (node): Promise<ActionResult[]> => {
+    let actionResults: ActionResult[] = [];
     if (isAction(node)) {
       if (!node.credentialId || !workflow.userId) throw new Error(`Action node ${node.id} has no credential reference`);
       const credential = await CredentialModel.findOne({ _id: node.credentialId, userId: workflow.userId, revokedAt: null }).select("ciphertext iv authTag");
       if (!credential) throw new Error(`Credential not found for action node ${node.id}`);
-      await dispatchAction({
+      const result = await dispatchAction({
         ...node,
         credentials: decryptCredential(credential.toObject()),
       });
+      actionResults.push({ nodeId: node.id, result });
     }
-    await executeRecursive(workflow, node.id, new Set(visited));
+    return [...actionResults, ...(await executeRecursive(workflow, node.id, new Set(visited)))];
   }));
+  return results.flat();
 }
 
 export async function executeWorkflow(workflow: WorkflowLike, executionId?: unknown) {
@@ -77,8 +81,8 @@ export async function executeWorkflow(workflow: WorkflowLike, executionId?: unkn
       }, executionTimeoutMs())
     : undefined;
   try {
-    await executeRecursive(workflow, trigger.id);
-    const completed = await ExecutionModel.updateOne({ _id: execution._id, status: "running" }, { $set: { status: status.success, endTime: new Date(), leaseUntil: null }, $unset: { queueKey: 1 } });
+    const results = await executeRecursive(workflow, trigger.id);
+    const completed = await ExecutionModel.updateOne({ _id: execution._id, status: "running" }, { $set: { status: status.success, endTime: new Date(), leaseUntil: null, results }, $unset: { queueKey: 1 } });
     if (completed.modifiedCount === 0) throw new Error("Execution timed out");
     return execution._id;
   } catch (error) {

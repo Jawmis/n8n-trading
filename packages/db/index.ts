@@ -204,6 +204,9 @@ const ExecutionSchema = new Schema({
     },
     error: {
         type: String
+    },
+    results: {
+        type: Schema.Types.Mixed
     }
 })
 ExecutionSchema.index({ workflowId: 1, startTime: -1 });
