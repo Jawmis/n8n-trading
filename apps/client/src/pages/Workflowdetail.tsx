@@ -18,8 +18,6 @@ import { ActionSheet } from '@/component/ActionSheet';
 import { Timer } from '@/nodes/triggers/Timer';
 import { PriceTrigger } from '@/nodes/triggers/PriceTrigger';
 import { Lighter } from '@/nodes/actions/Lighter';
-import { Backpack } from '@/nodes/actions/Backpack';
-import { HyperLiquid } from '@/nodes/actions/Hyperliquid';
 import type { NodeKind, NodeMetadata } from '@/component/CreateWorkflow';
 import { validateWorkflowGraph } from 'common/types';
 
@@ -27,8 +25,6 @@ const nodeTypes = {
   timer: Timer,
   'price-trigger': PriceTrigger,
   lighter: Lighter,
-  backpack: Backpack,
-  hyperliquid: HyperLiquid,
 };
 
 
