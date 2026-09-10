@@ -9,9 +9,10 @@
     "test": "bun test",
     "check-types": "tsc --noEmit"
   },
-  "dependencies":{
-    "db" : "*",
+  "dependencies": {
     "common": "*",
+    "db": "*",
+    "lighter-ts-sdk": "^1.1.0",
     "mongoose": "^9.7.3"
   },
   "devDependencies": {

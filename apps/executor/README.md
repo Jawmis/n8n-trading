@@ -15,15 +15,21 @@ To run:
 bun run dev
 ```
 
-Action handlers are injectable. Provide `globalThis.LIGHTER_CLIENT` with
-`getMarketPrice` and `placeOrder` implementations to connect a Lighter SDK.
-The executor never creates a live exchange client implicitly.
+The executor includes a signed Lighter adapter backed by `lighter-ts-sdk`.
+Credential secrets must contain `apiKey` (the Lighter API private key),
+`accountIndex`, and `apiIndex`. Set `LIGHTER_NETWORK` (default `mainnet`) or
+`LIGHTER_API_URL` before starting the executor. The adapter resolves market
+indices and precision from Lighter, signs orders with the SDK WASM signer, and
+requires a transaction hash before reporting success. `globalThis.LIGHTER_CLIENT`
+remains available for deterministic tests and paper-mode integrations.
 
 Trading defaults to paper mode. Live trading additionally requires
 `TRADING_MODE=live` and `LIVE_TRADING_ENABLED=true`. Configure
 `TRADING_KILL_SWITCH`, `ALLOWED_TRADING_ASSETS`, `MAX_ORDER_QUANTITY`, and
-`MAX_ORDER_NOTIONAL` before enabling live orders; missing or invalid limits
-fail closed.
+`MAX_ORDER_NOTIONAL`, `MAX_ORDER_LEVERAGE`, and `MAX_ORDER_SLIPPAGE_BPS` before
+enabling live orders; missing or invalid limits fail closed. Live orders also
+require `TRADING_MODE=live`, `LIVE_TRADING_ENABLED=true`, and a credential
+private key.
 
 Price triggers require an injected `globalThis.PRICE_FEED` implementing
 `getPrice(asset)`. The executor records a pending price-trigger execution only
