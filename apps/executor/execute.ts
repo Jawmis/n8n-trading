@@ -21,6 +21,10 @@ export interface WorkflowLike {
 }
 const status = { pending: "pending", success: "success", failure: "failure" } as const;
 const isAction = (node: WorkflowNodeLike) => String(node.data?.kind).toLowerCase() === "action";
+const executionTimeoutMs = () => {
+  const configured = Number(process.env.EXECUTION_TIMEOUT_MS ?? 300_000);
+  return Number.isFinite(configured) && configured > 0 ? configured : 300_000;
+};
 
 export async function executeRecursive(workflow: WorkflowLike, currentNodeId: string, visited = new Set<string>()): Promise<void> {
   if (visited.has(currentNodeId)) return;
@@ -59,15 +63,28 @@ export async function executeWorkflow(workflow: WorkflowLike, executionId?: unkn
         );
       }, 10_000)
     : undefined;
+  const timeout = executionId
+    ? setTimeout(() => {
+        void ExecutionModel.updateOne(
+          { _id: execution._id, status: "running" },
+          {
+            $set: { status: status.failure, endTime: new Date(), error: "Execution timed out", leaseUntil: null },
+            $unset: { queueKey: 1 },
+          },
+        );
+      }, executionTimeoutMs())
+    : undefined;
   try {
     await executeRecursive(workflow, trigger.id);
-    await ExecutionModel.updateOne({ _id: execution._id }, { $set: { status: status.success, endTime: new Date(), leaseUntil: null }, $unset: { queueKey: 1 } });
+    const completed = await ExecutionModel.updateOne({ _id: execution._id, status: "running" }, { $set: { status: status.success, endTime: new Date(), leaseUntil: null }, $unset: { queueKey: 1 } });
+    if (completed.modifiedCount === 0) throw new Error("Execution timed out");
     return execution._id;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await ExecutionModel.updateOne({ _id: execution._id }, { $set: { status: status.failure, endTime: new Date(), error: message, leaseUntil: null }, $unset: { queueKey: 1 } });
+    await ExecutionModel.updateOne({ _id: execution._id, status: "running" }, { $set: { status: status.failure, endTime: new Date(), error: message, leaseUntil: null }, $unset: { queueKey: 1 } });
     throw error;
   } finally {
     if (heartbeat) clearInterval(heartbeat);
+    if (timeout) clearTimeout(timeout);
   }
 }
