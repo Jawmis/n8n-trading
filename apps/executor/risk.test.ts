@@ -41,4 +41,8 @@ describe("trade risk policy", () => {
     expect(() => validateTradeRisk({ ...order, price: 101 }, 100)).toThrow("slippage");
     expect(validateTradeRisk({ ...order, leverage: 2, price: 100.4 }, 100).maxLeverage).toBe(2);
   });
+  test("does not apply limit slippage to market orders without a requested price", () => {
+    process.env.MAX_ORDER_SLIPPAGE_BPS = "0";
+    expect(validateTradeRisk(order, 100.123).mode).toBe("paper");
+  });
 });

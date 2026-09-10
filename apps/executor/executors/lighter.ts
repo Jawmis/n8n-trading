@@ -100,7 +100,9 @@ export async function executeLighter(node: WorkflowNodeLike, client?: LighterCli
   if (!Number.isFinite(market.price) || market.price <= 0) throw new Error("Lighter returned an invalid market price");
   const round = (value: number, decimals: number) => Number(value.toFixed(decimals));
   const executableOrder = { ...order, quantity: round(order.quantity, market.quantityDecimals ?? 4), price: round(order.price ?? market.price, market.priceDecimals ?? 2) };
-  const risk = validateTradeRisk(executableOrder, market.price);
+  // Validate slippage only against a user-specified limit. The rounded market
+  // execution price is an exchange encoding detail, not a user price bound.
+  const risk = validateTradeRisk({ ...executableOrder, price: order.price }, market.price);
   if (risk.mode === "paper") return { mode: "paper", order: { ...executableOrder, apiKey: "[redacted]" } };
   return exchange.placeOrder(executableOrder);
 }
