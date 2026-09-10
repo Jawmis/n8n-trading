@@ -189,6 +189,8 @@ describe("workflow ownership integration", () => {
 
   integrationTest("round trips the canonical workflow DTO through persistence and execution queueing", async () => {
     const payload = {
+      name: "Canonical timer",
+      enabled: true,
       nodes: [{ nodeId: "timer", type: "timer", id: "trigger", position: { x: 40, y: 80 }, data: { kind: "TRIGGER", metadata: { time: 90 } } }],
       edges: [],
     };
@@ -196,8 +198,10 @@ describe("workflow ownership integration", () => {
     expect(created.status).toBe(200);
     const createdId = (await created.json() as { id: string }).id;
     const loaded = await request(`/workflow/${createdId}`);
-    const loadedBody = await loaded.json() as { nodes: unknown[]; edges: unknown[] };
+    const loadedBody = await loaded.json() as { name: string; enabled: boolean; nodes: unknown[]; edges: unknown[] };
     expect(loaded.status).toBe(200);
+    expect(loadedBody.name).toBe(payload.name);
+    expect(loadedBody.enabled).toBe(true);
     expect(loadedBody.nodes).toEqual(payload.nodes);
     expect(loadedBody.edges).toEqual(payload.edges);
     expect((await request(`/workflow/${createdId}/execute`, { method: "POST" })).status).toBe(200);

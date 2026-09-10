@@ -15,7 +15,12 @@ const NodeSchema = z.object({
     position: PositionSchema,
 }).strict();
 
-export const CreateWorkflowSchema = z.object({ nodes: z.array(NodeSchema).max(100), edges: z.array(EdgeSchema).max(500) }).strict();
+export const CreateWorkflowSchema = z.object({
+    name: z.string().trim().min(1).max(100).optional(),
+    enabled: z.boolean().optional(),
+    nodes: z.array(NodeSchema).max(100),
+    edges: z.array(EdgeSchema).max(500),
+}).strict();
 export const UpdateWorkflowSchema = CreateWorkflowSchema;
 const TimerMetadataSchema = z.object({ time: z.number().finite().positive() }).strict();
 const PriceTriggerMetadataSchema = z.object({ asset: z.enum(SUPPORTED_ASSETS), price: z.number().finite().positive(), decimals: z.number().int().nonnegative().optional() }).strict();

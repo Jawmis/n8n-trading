@@ -93,11 +93,13 @@ export default function WorkflowDetail() {
   );
 
   async function handleSave() {
-    if (!workflowId) return;
+    if (!workflowId || !workflow) return;
     setSaving(true);
     setSaveError(null);
     try {
       const payload = {
+        name: workflow.name,
+        enabled: workflow.enabled,
         nodes: nodes.map(editorNodeToWorkflowNode),
         edges,
       };
@@ -145,8 +147,23 @@ export default function WorkflowDetail() {
       {showTriggerSheet && <TriggerSheet onSelect={addTrigger} />}
       {showActionSheet && <ActionSheet onClose={() => setShowActionSheet(false)} onSelect={addAction} />}
       <div className="flex items-center justify-between p-4 border-b">
-        <h1 className="text-xl font-semibold">Workflow {workflow._id}</h1>
+        <h1 className="text-xl font-semibold">{workflow.name || 'Untitled workflow'}</h1>
         <div className="flex gap-2">
+          <button
+            onClick={async () => {
+              if (!workflowId) return;
+              const enabled = !workflow.enabled;
+              try {
+                await apiUpdateWorkflow(workflowId, { name: workflow.name, enabled, nodes: nodes.map(editorNodeToWorkflowNode), edges });
+                setWorkflow({ ...workflow, enabled });
+              } catch {
+                setSaveError('Could not change workflow status. Please try again.');
+              }
+            }}
+            className="px-4 py-2 rounded-md border"
+          >
+            {workflow.enabled ? 'Pause' : 'Enable'}
+          </button>
           <button
             onClick={() => openActionSheet()}
             className="px-4 py-2 rounded-md bg-primary text-primary-foreground"

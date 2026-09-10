@@ -26,6 +26,8 @@ export type WorkflowEdge = {
 export type Workflow = {
   _id: string;
   userId: string;
+  name: string;
+  enabled: boolean;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
 };
@@ -115,7 +117,7 @@ export async function apiCreateWorkflow(body: { nodes: WorkflowNode[]; edges: Wo
   return res.data;
 }
 
-export async function apiUpdateWorkflow(workflowId: string, body: { nodes: WorkflowNode[]; edges: WorkflowEdge[] }): Promise<IdResponse> {
+export async function apiUpdateWorkflow(workflowId: string, body: { name?: string; enabled?: boolean; nodes: WorkflowNode[]; edges: WorkflowEdge[] }): Promise<IdResponse> {
   const res = await api.put<IdResponse>(`/workflow/${workflowId}`, body);
   return res.data;
 }

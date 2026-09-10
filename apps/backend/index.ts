@@ -171,6 +171,8 @@ app.post("/workflow",authMiddleware, async (req, res) => {
     }
     try {
         const workflow = await WorkflowModel.create({
+            name: data.name ?? "Untitled workflow",
+            enabled: data.enabled ?? true,
             userId,
             nodes: data.nodes,
             edges: data.edges
@@ -234,6 +236,10 @@ app.post("/workflow/:workflowId/execute", authMiddleware, async (req, res) => {
         const workflow = await WorkflowModel.findById(req.params.workflowId);
         if (!workflow || workflow.userId.toString() !== req.userId) {
             res.status(404).json({ message: "Workflow not found" });
+            return;
+        }
+        if (workflow.enabled === false) {
+            res.status(409).json({ message: "Workflow is disabled" });
             return;
         }
         const stored = workflow.toObject();

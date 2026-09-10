@@ -116,6 +116,8 @@ const EdgesSchema = new Schema({
 })
 
 const WorkflowSchema = new Schema({
+    name: { type: String, required: true, default: "Untitled workflow", maxlength: 100 },
+    enabled: { type: Boolean, required: true, default: true },
     userId: {
         type: mongoose.Types.ObjectId,
         required: true,

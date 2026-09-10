@@ -52,6 +52,7 @@ export function timerIsDue(lastExecution: { startTime?: Date | string } | null, 
 async function enqueueTimerJobs(now: number) {
   const workflows = await WorkflowModel.find();
   for (const workflow of workflows as unknown as WorkflowLike[]) {
+    if ((workflow as WorkflowLike & { enabled?: boolean }).enabled === false) continue;
     const trigger = workflow.nodes.find((node) => String(node.data?.kind).toLowerCase() === "trigger");
     if (!trigger) continue;
     if (trigger.type === "price-trigger") {
