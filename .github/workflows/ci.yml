@@ -48,9 +48,15 @@ jobs:
           CREDENTIAL_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
         run: |
           docker compose -f deploy/docker-compose.yml up -d
-          curl --fail --retry 30 --retry-delay 2 http://localhost:3000/readyz
-          curl --fail --retry 30 --retry-delay 2 http://localhost:3001/readyz
-          curl --fail --retry 30 --retry-delay 2 http://localhost/
+          curl --fail --retry 30 --retry-all-errors --retry-delay 2 http://localhost:3000/readyz
+          curl --fail --retry 30 --retry-all-errors --retry-delay 2 http://localhost:3001/readyz
+          curl --fail --retry 30 --retry-all-errors --retry-delay 2 http://localhost/
+      - name: Show service logs on failure
+        if: failure()
+        run: docker compose -f deploy/docker-compose.yml logs --no-color
       - name: Tear down deployment stack
         if: always()
+        env:
+          JWT_SECRET: ci-test-secret
+          CREDENTIAL_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
         run: docker compose -f deploy/docker-compose.yml down -v
