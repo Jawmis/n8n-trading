@@ -2,7 +2,7 @@ import express from 'express';
 import type { ErrorRequestHandler } from 'express';
 import mongoose from 'mongoose';
 import { CredentialModel, ExecutionModel, NodesModel, UserModel, WorkflowModel } from 'db/client';
-import { encryptCredential } from 'db/credentials';
+import { decryptCredential, encryptCredential } from 'db/credentials';
 import jwt from "jsonwebtoken"; 
 import { SignupSchema,SigninSchema, CreateWorkflowSchema, UpdateWorkflowSchema, validateWorkflowGraph } from 'common/types';
 import { authMiddleware, JWT_AUDIENCE, JWT_ISSUER } from './middleware';
@@ -325,8 +325,48 @@ app.put("/credentials/:credentialId", authMiddleware, async (req, res) => {
 });
 
 app.get("/credentials", authMiddleware, async (req, res) => {
-    const credentials = await CredentialModel.find({ userId: req.userId }).select("provider createdAt updatedAt").sort({ createdAt: -1 });
+    const credentials = await CredentialModel.find({ userId: req.userId }).select("provider createdAt updatedAt revokedAt").sort({ createdAt: -1 });
     res.json(credentials);
+});
+
+app.post("/credentials/:credentialId/test", authMiddleware, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.credentialId)) {
+        res.status(404).json({ message: "Credential not found" });
+        return;
+    }
+    try {
+        const credential = await CredentialModel.findOne({ _id: req.params.credentialId, userId: req.userId })
+            .select("+ciphertext +iv +authTag revokedAt");
+        if (!credential) {
+            res.status(404).json({ message: "Credential not found" });
+            return;
+        }
+        if (credential.revokedAt) {
+            res.status(409).json({ message: "Credential is revoked" });
+            return;
+        }
+        decryptCredential(credential.toObject());
+        res.json({ ok: true });
+    } catch {
+        res.status(422).json({ ok: false, message: "Credential could not be decrypted" });
+    }
+});
+
+app.post("/credentials/:credentialId/revoke", authMiddleware, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.credentialId)) {
+        res.status(404).json({ message: "Credential not found" });
+        return;
+    }
+    const credential = await CredentialModel.findOneAndUpdate(
+        { _id: req.params.credentialId, userId: req.userId },
+        { $set: { revokedAt: new Date() } },
+        { new: true },
+    ).select("_id revokedAt");
+    if (!credential) {
+        res.status(404).json({ message: "Credential not found" });
+        return;
+    }
+    res.json({ id: credential._id, revokedAt: credential.revokedAt });
 });
 
 app.delete("/credentials/:credentialId", authMiddleware, async (req, res) => {

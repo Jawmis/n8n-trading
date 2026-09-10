@@ -26,6 +26,7 @@ const CredentialSchema = new Schema({
     ciphertext: { type: String, required: true },
     iv: { type: String, required: true },
     authTag: { type: String, required: true },
+    revokedAt: { type: Date },
 }, { timestamps: true });
 CredentialSchema.index({ userId: 1, provider: 1 });
 

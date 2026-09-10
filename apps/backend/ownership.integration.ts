@@ -22,13 +22,13 @@ function token(userId: mongoose.Types.ObjectId) {
   });
 }
 
-async function request(path: string, init: RequestInit = {}) {
+async function request(path: string, init: RequestInit = {}, authenticatedUser = userB) {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Integration server did not bind");
   return fetch(`http://127.0.0.1:${address.port}${path}`, {
     ...init,
     headers: {
-      authorization: `Bearer ${token(userB)}`,
+      authorization: `Bearer ${token(authenticatedUser)}`,
       "content-type": "application/json",
       ...(init.headers ?? {}),
     },
@@ -55,7 +55,7 @@ describe("workflow ownership integration", () => {
     userB = b._id;
     const workflow = await WorkflowModel.create({
       userId: userA,
-      nodes: [{ nodeId: "timer", type: "timer", id: "trigger", position: { x: 0, y: 0 }, data: { kind: "TRIGGER", metadata: { time: 60 } } }],
+      nodes: [{ nodeId: "timer", type: "timer", id: "trigger", position: { x: 0, y: 0 }, data: { kind: "TRIGGER", metadata: { time: 60 } }, credentials: { apiKey: "legacy-inline-secret" } }],
       edges: [],
     });
     const userBWorkflow = await WorkflowModel.create({
@@ -101,5 +101,35 @@ describe("workflow ownership integration", () => {
     expect((await request("/workflow/not-an-object-id" as string)).status).toBe(404);
     expect((await request("/workflow/not-an-object-id/execute", { method: "POST" })).status).toBe(404);
     expect((await request("/workflow/executions/not-an-object-id")).status).toBe(404);
+  });
+
+  integrationTest("keeps credential secrets out of responses and enforces lifecycle ownership", async () => {
+    const workflowResponse = await request(`/workflow/${workflowId}`, {}, userA);
+    const workflowBody = await workflowResponse.text();
+    expect(workflowResponse.status).toBe(200);
+    expect(workflowBody).not.toContain("legacy-inline-secret");
+    expect(workflowBody).not.toContain("ciphertext");
+
+    const created = await request("/credentials", {
+      method: "POST",
+      body: JSON.stringify({ provider: "lighter", secret: { apiKey: "encrypted-api-key", accountIndex: 1, apiIndex: 2 } }),
+    });
+    const createdBody = await created.text();
+    expect(created.status).toBe(201);
+    expect(createdBody).not.toContain("encrypted-api-key");
+    const credentialId = JSON.parse(createdBody).id as string;
+
+    const listed = await request("/credentials");
+    const listedBody = await listed.text();
+    expect(listed.status).toBe(200);
+    expect(listedBody).not.toContain("encrypted-api-key");
+    expect(listedBody).not.toContain("ciphertext");
+
+    expect((await request(`/credentials/${credentialId}/test`, { method: "POST" })).status).toBe(200);
+    expect((await request(`/credentials/${credentialId}/test`, { method: "POST" }, userA)).status).toBe(404);
+    expect((await request(`/credentials/${credentialId}/revoke`, { method: "POST" })).status).toBe(200);
+    expect((await request(`/credentials/${credentialId}/test`, { method: "POST" })).status).toBe(409);
+    expect((await request(`/credentials/${credentialId}`, { method: "DELETE" }, userA)).status).toBe(404);
+    expect((await request(`/credentials/${credentialId}`, { method: "DELETE" })).status).toBe(204);
   });
 });
