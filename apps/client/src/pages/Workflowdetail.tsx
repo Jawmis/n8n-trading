@@ -7,12 +7,11 @@ import {
   Controls,
   applyNodeChanges,
   applyEdgeChanges,
-  type Node,
   type Edge,
   type NodeChange,
   type EdgeChange,
 } from '@xyflow/react';
-import { apiExecuteWorkflow, apiGetWorkflow, apiUpdateWorkflow, type Workflow, type WorkflowNode } from '@/lib/http';
+import { apiExecuteWorkflow, apiGetWorkflow, apiUpdateWorkflow, type Workflow } from '@/lib/http';
 import { TriggerSheet } from '@/component/TriggerSheet';
 import { ActionSheet } from '@/component/ActionSheet';
 import { Timer } from '@/nodes/triggers/Timer';
@@ -20,6 +19,7 @@ import { PriceTrigger } from '@/nodes/triggers/PriceTrigger';
 import { Lighter } from '@/nodes/actions/Lighter';
 import type { NodeKind, NodeMetadata } from '@/component/CreateWorkflow';
 import { validateWorkflowGraph } from 'common/types';
+import { editorNodeToWorkflowNode, workflowNodeToEditorNode, type EditorWorkflowNode } from '@/lib/workflow-dto';
 
 const nodeTypes = {
   timer: Timer,
@@ -31,7 +31,7 @@ const nodeTypes = {
 export default function WorkflowDetail() {
   const { workflowId } = useParams<{ workflowId: string }>();
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
-  const [nodes, setNodes] = useState<Node[]>([]);
+  const [nodes, setNodes] = useState<EditorWorkflowNode[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
@@ -48,12 +48,7 @@ export default function WorkflowDetail() {
     apiGetWorkflow(workflowId).then((wf) => {
       setWorkflow(wf);
       setNodes(
-        wf.nodes.map((n) => ({
-          id: n.id,
-          position: n.position,
-          data: n.data,
-          type: n.type,
-        }))
+        wf.nodes.map(workflowNodeToEditorNode)
       );
       setEdges(wf.edges);
       if (wf.nodes.length === 0) setShowTriggerSheet(true);
@@ -67,8 +62,8 @@ export default function WorkflowDetail() {
   }
 
   function addTrigger(type: NodeKind, metadata: NodeMetadata) {
-    const node: Node = {
-      id: crypto.randomUUID(), type, position: { x: 120, y: 220 },
+    const node: EditorWorkflowNode = {
+      id: crypto.randomUUID(), nodeId: type, type, position: { x: 120, y: 220 },
       data: { kind: 'trigger', metadata },
     };
     setNodes([node]);
@@ -78,7 +73,7 @@ export default function WorkflowDetail() {
   function addAction(type: NodeKind, metadata: NodeMetadata, credentialId?: string) {
     const nodeId = crypto.randomUUID();
     const position = actionPosition ?? { x: 360 + nodes.length * 40, y: 220 + nodes.length * 30 };
-    setNodes((current) => [...current, { id: nodeId, type, position, data: { kind: 'action', metadata }, credentialId }]);
+    setNodes((current) => [...current, { id: nodeId, nodeId: type, type, position, data: { kind: 'action', metadata }, credentialId }]);
     if (connectionSource) {
       setEdges((current) => [...current, { id: `${connectionSource}-${nodeId}`, source: connectionSource, target: nodeId }]);
     }
@@ -88,7 +83,7 @@ export default function WorkflowDetail() {
   }
 
   const onNodesChange = useCallback(
-    (changes: NodeChange[]) => setNodes((nds) => applyNodeChanges(changes, nds)),
+    (changes: NodeChange[]) => setNodes((nds) => applyNodeChanges(changes, nds) as EditorWorkflowNode[]),
     []
   );
 
@@ -103,17 +98,7 @@ export default function WorkflowDetail() {
     setSaveError(null);
     try {
       const payload = {
-        nodes: nodes.map((node): WorkflowNode => ({
-          nodeId: node.type ?? '',
-          type: node.type ?? '',
-          credentialId: (node as Node & { credentialId?: string }).credentialId,
-          id: node.id,
-          position: { x: node.position.x, y: node.position.y },
-          data: {
-            kind: node.data.kind === 'action' ? 'ACTION' : 'TRIGGER',
-            metadata: node.data.metadata,
-          },
-        })),
+        nodes: nodes.map(editorNodeToWorkflowNode),
         edges,
       };
       const validation = validateWorkflowGraph(payload);
@@ -132,17 +117,7 @@ export default function WorkflowDetail() {
   async function handleRun() {
     if (!workflowId) return;
     const payload = {
-      nodes: nodes.map((node): WorkflowNode => ({
-        nodeId: node.type ?? '',
-        type: node.type ?? '',
-        credentialId: (node as Node & { credentialId?: string }).credentialId,
-        id: node.id,
-        position: { x: node.position.x, y: node.position.y },
-        data: {
-          kind: String(node.data.kind).toUpperCase() as 'ACTION' | 'TRIGGER',
-          metadata: node.data.metadata,
-        },
-      })),
+      nodes: nodes.map(editorNodeToWorkflowNode),
       edges,
     };
     const validation = validateWorkflowGraph(payload);
