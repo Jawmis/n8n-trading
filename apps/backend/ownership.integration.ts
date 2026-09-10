@@ -119,6 +119,14 @@ describe("workflow ownership integration", () => {
     expect(createdBody).not.toContain("encrypted-api-key");
     const credentialId = JSON.parse(createdBody).id as string;
 
+    const rotated = await request(`/credentials/${credentialId}`, {
+      method: "PUT",
+      body: JSON.stringify({ provider: "lighter", secret: { apiKey: "rotated-api-key", accountIndex: 3, apiIndex: 4 } }),
+    });
+    const rotatedBody = await rotated.text();
+    expect(rotated.status).toBe(200);
+    expect(rotatedBody).not.toContain("rotated-api-key");
+
     const listed = await request("/credentials");
     const listedBody = await listed.text();
     expect(listed.status).toBe(200);
