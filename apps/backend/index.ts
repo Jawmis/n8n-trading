@@ -351,7 +351,8 @@ app.post("/credentials/:credentialId/test", authMiddleware, async (req, res) => 
             authTag: credential.authTag,
         });
         res.json({ ok: true });
-    } catch {
+    } catch (error) {
+        console.error(JSON.stringify({ event: "credential_test_failed", credentialId: req.params.credentialId, reason: error instanceof Error ? error.message : String(error) }));
         res.status(422).json({ ok: false, message: "Credential could not be decrypted" });
     }
 });
