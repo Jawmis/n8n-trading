@@ -423,6 +423,10 @@ app.get("/nodes", async (req, res) => {
 })
 
 const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
+    if (error?.type === "entity.too.large") {
+        res.status(413).json({ message: "Request body is too large" });
+        return;
+    }
     if (error instanceof SyntaxError && "body" in error) {
         res.status(400).json({ message: "Malformed JSON body" });
         return;

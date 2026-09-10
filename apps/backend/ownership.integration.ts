@@ -148,4 +148,17 @@ describe("workflow ownership integration", () => {
     const body = await afterSignout.json() as { message?: string };
     expect(body.message).toContain("revoked");
   });
+
+  integrationTest("returns structured client errors for invalid and oversized requests", async () => {
+    const invalid = await request("/workflow", { method: "POST", body: JSON.stringify({ nodes: [], edges: [] }) });
+    expect(invalid.status).toBe(400);
+    expect((await invalid.json() as { message?: string }).message).toBeTruthy();
+
+    const oversized = await request("/workflow", {
+      method: "POST",
+      body: JSON.stringify({ padding: "x".repeat(1_100_000) }),
+    });
+    expect(oversized.status).toBe(413);
+    expect((await oversized.json() as { message?: string }).message).toBe("Request body is too large");
+  });
 });
