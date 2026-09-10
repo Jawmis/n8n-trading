@@ -41,4 +41,13 @@ describe("Lighter action adapter", () => {
     expect(submitted).toMatchObject({ asset: "BTC", quantity: 1, side: "long", price: 100.12, reduceOnly: true });
     expect(submitted?.apiKey).toBe("private-key");
   });
+
+  test("supports paper short orders", async () => {
+    (globalThis as typeof globalThis & { LIGHTER_CLIENT?: unknown }).LIGHTER_CLIENT = {
+      getMarketPrice: async () => ({ price: 100, priceDecimals: 2, quantityDecimals: 3 }),
+      placeOrder: async () => { throw new Error("paper mode must not submit"); },
+    };
+    const result = await executeLighter({ ...node, data: { kind: "ACTION", metadata: { type: "SHORT", symbol: "BTC", qty: 1 } } });
+    expect(result).toMatchObject({ mode: "paper", order: { side: "short", asset: "BTC", quantity: 1 } });
+  });
 });
