@@ -11,6 +11,7 @@ let server: ReturnType<typeof app.listen>;
 let userA: mongoose.Types.ObjectId;
 let userB: mongoose.Types.ObjectId;
 let workflowId: mongoose.Types.ObjectId;
+let userBWorkflowId: mongoose.Types.ObjectId;
 
 function token(userId: mongoose.Types.ObjectId) {
   return jwt.sign({ id: userId.toString(), tokenVersion: 0 }, secret, {
@@ -57,14 +58,20 @@ describe("workflow ownership integration", () => {
       nodes: [{ nodeId: "timer", type: "timer", id: "trigger", position: { x: 0, y: 0 }, data: { kind: "TRIGGER", metadata: { time: 60 } } }],
       edges: [],
     });
+    const userBWorkflow = await WorkflowModel.create({
+      userId: userB,
+      nodes: [{ nodeId: "timer", type: "timer", id: "trigger", position: { x: 0, y: 0 }, data: { kind: "TRIGGER", metadata: { time: 60 } } }],
+      edges: [],
+    });
     workflowId = workflow._id;
+    userBWorkflowId = userBWorkflow._id;
     await ExecutionModel.create({ workflowId, kind: "manual", status: "success" });
   });
 
   afterAll(async () => {
     if (process.env.RUN_INTEGRATION_TESTS !== "1") return;
     await ExecutionModel.deleteMany({ workflowId });
-    await WorkflowModel.deleteMany({ _id: workflowId });
+    await WorkflowModel.deleteMany({ _id: { $in: [workflowId, userBWorkflowId] } });
     await UserModel.deleteMany({ _id: { $in: [userA, userB] } });
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await mongoose.disconnect();
@@ -75,6 +82,8 @@ describe("workflow ownership integration", () => {
       nodes: [{ nodeId: "timer", type: "timer", id: "trigger", position: { x: 0, y: 0 }, data: { kind: "TRIGGER", metadata: { time: 60 } } }],
       edges: [],
     };
+    const ownUpdate = await request(`/workflow/${userBWorkflowId}`, { method: "PUT", body: JSON.stringify(validWorkflow) });
+    expect(ownUpdate.status).toBe(200);
     const workflow = await request(`/workflow/${workflowId}`);
     expect(workflow.status).toBe(404);
 
