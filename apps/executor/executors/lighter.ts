@@ -3,7 +3,7 @@ import { validateTradeRisk } from "../risk";
 import { AccountApi, ApiClient, MarketHelper, OrderApi, SignerClient, resolveNetworkFromEnv } from "lighter-ts-sdk";
 const assets = new Set(["SOL", "BTC", "ETH"]);
 export interface LighterOrder { asset: "SOL" | "BTC" | "ETH"; quantity: number; side: "long" | "short"; price?: number; leverage?: number; reduceOnly?: boolean; apiKey: string; accountIndex: string | number; apiIndex: string | number; }
-export interface LighterClient { getMarketPrice(asset: string): Promise<{ price: number; priceDecimals?: number; quantityDecimals?: number }>; getPositionNotional?: (asset: string) => Promise<number>; placeOrder(order: LighterOrder & { price: number }): Promise<unknown>; close?: () => Promise<void>; }
+export interface LighterClient { getMarketPrice(asset: string): Promise<{ price: number; priceDecimals?: number; quantityDecimals?: number }>; getPositionNotional?: (asset: string) => Promise<number>; placeOrder(order: LighterOrder & { price: number }): Promise<unknown>; getOrderStatus?: (asset: string, orderId: number) => Promise<unknown>; cancelOrder?: (asset: string, orderId: number) => Promise<unknown>; close?: () => Promise<void>; }
 
 type Market = { helper: MarketHelper; priceDecimals: number; quantityDecimals: number };
 
@@ -87,7 +87,23 @@ export class SdkLighterClient implements LighterClient {
       reduceOnly: order.reduceOnly ?? false,
     });
     if (error || !hash) throw new Error(`Lighter order rejected: ${error ?? "missing transaction hash"}`);
-    return { transactionHash: hash, order: result };
+    const orderRecord = result as { order_index?: number; order_id?: string } | null;
+    return { transactionHash: hash, orderId: orderRecord?.order_index ?? orderRecord?.order_id, order: result };
+  }
+
+  async getOrderStatus(asset: string, orderId: number) {
+    const market = await this.market(asset);
+    const orders = await this.orderApi.getAccountActiveOrders(this.accountIndex, market.helper.getConfig().index);
+    return orders.find((order) => order.order_index === orderId || Number(order.order_id) === orderId) ?? null;
+  }
+
+  async cancelOrder(asset: string, orderId: number) {
+    if (!this.signer) throw new Error("Lighter cancellation requires an API private key");
+    const market = await this.market(asset);
+    await this.signer.initialize();
+    const [, hash, error] = await this.signer.cancelOrder({ marketIndex: market.helper.getConfig().index, orderIndex: orderId });
+    if (error || !hash) throw new Error(`Lighter cancellation rejected: ${error ?? "missing transaction hash"}`);
+    return { transactionHash: hash, orderId };
   }
 
   async close() {
