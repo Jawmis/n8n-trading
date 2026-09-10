@@ -4,6 +4,7 @@ import { executeWorkflow, type WorkflowLike } from "./execute";
 import { crossedThreshold, type PriceDirection } from "./price";
 
 export const POLL_INTERVAL_MS = 2_000;
+export const MAX_JOB_ATTEMPTS = 3;
 const JOB_LEASE_MS = 60_000;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 let stopping = false;
@@ -87,11 +88,26 @@ async function enqueueTimerJobs(now: number) {
 }
 
 async function claimAndStartJob(now: number): Promise<boolean> {
+  await ExecutionModel.updateMany(
+    {
+      status: "running",
+      leaseUntil: { $lte: new Date(now) },
+      attempt: { $gte: MAX_JOB_ATTEMPTS },
+    },
+    {
+      $set: {
+        status: "failure",
+        endTime: new Date(now),
+        error: `Maximum execution attempts (${MAX_JOB_ATTEMPTS}) exceeded`,
+        leaseUntil: null,
+      },
+    },
+  );
   const job = await ExecutionModel.findOneAndUpdate(
     {
       $or: [
-        { status: "pending" },
-        { status: "running", leaseUntil: { $lte: new Date(now) } },
+        { status: "pending", $or: [{ attempt: { $lt: MAX_JOB_ATTEMPTS } }, { attempt: { $exists: false } }] },
+        { status: "running", leaseUntil: { $lte: new Date(now) }, attempt: { $lt: MAX_JOB_ATTEMPTS } },
       ],
     },
     {
