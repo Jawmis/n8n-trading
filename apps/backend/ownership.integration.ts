@@ -170,4 +170,20 @@ describe("workflow ownership integration", () => {
     expect([first.status, second.status].sort()).toEqual([200, 409]);
     expect(await ExecutionModel.countDocuments({ workflowId: userBWorkflowId, status: "pending" })).toBe(1);
   });
+
+  integrationTest("allows only one concurrent worker claim for a durable job", async () => {
+    const job = await ExecutionModel.create({
+      workflowId: userBWorkflowId,
+      kind: "manual",
+      status: "pending",
+      queueKey: `${userBWorkflowId}:claim-test:${Date.now()}`,
+    });
+    const claim = () => ExecutionModel.findOneAndUpdate(
+      { _id: job._id, status: "pending" },
+      { $set: { status: "running", claimedAt: new Date(), leaseUntil: new Date(Date.now() + 60_000) }, $inc: { attempt: 1 } },
+      { new: true },
+    );
+    const claims = await Promise.all([claim(), claim()]);
+    expect(claims.filter(Boolean)).toHaveLength(1);
+  });
 });
