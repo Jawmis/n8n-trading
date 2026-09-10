@@ -41,8 +41,6 @@ type PriceFeed = { getPrice(asset: string): Promise<PriceQuote> };
 function priceFeed() {
   return (globalThis as typeof globalThis & { PRICE_FEED?: PriceFeed }).PRICE_FEED;
 }
-const lastPrices = new Map<string, number>();
-
 export function timerIsDue(lastExecution: { startTime?: Date | string } | null, seconds: unknown, now = Date.now()) {
   const interval = Number(seconds);
   if (!Number.isFinite(interval) || interval <= 0) return false;
@@ -65,8 +63,8 @@ async function enqueueTimerJobs(now: number) {
         if (!quote) continue;
         const current = quote.price;
         const key = `${workflow._id}:${trigger.id}`;
-        const previous = lastPrices.get(key);
-        lastPrices.set(key, current);
+        const previous = workflow.priceState?.[trigger.id];
+        await WorkflowModel.updateOne({ _id: workflow._id }, { $set: { [`priceState.${trigger.id}`]: current } });
         if (previous === undefined || !crossedThreshold(previous, current, metadata.price, metadata.direction as PriceDirection | undefined)) continue;
         await ExecutionModel.create({ workflowId: workflow._id, kind: "price", status: "pending", queueKey: `${key}:${Math.floor(quote.timestamp / PRICE_EVENT_BUCKET_MS)}` });
       } catch (error) {

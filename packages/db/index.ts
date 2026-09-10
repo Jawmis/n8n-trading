@@ -127,6 +127,10 @@ const WorkflowSchema = new Schema({
     edges : [EdgesSchema],
     runRequestedAt: {
         type: Date
+    },
+    priceState: {
+        type: Schema.Types.Mixed,
+        default: {}
     }
 });
 WorkflowSchema.index({ userId: 1 });

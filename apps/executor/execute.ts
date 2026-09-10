@@ -19,6 +19,7 @@ export interface WorkflowLike {
   runRequestedAt?: Date | string;
   nodes: WorkflowNodeLike[];
   edges: { source: string; target: string }[];
+  priceState?: Record<string, number>;
 }
 const status = { pending: "pending", success: "success", failure: "failure" } as const;
 const isAction = (node: WorkflowNodeLike) => String(node.data?.kind).toLowerCase() === "action";
