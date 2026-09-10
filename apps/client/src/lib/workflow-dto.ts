@@ -5,6 +5,7 @@ export type EditorWorkflowNode = {
   nodeId: string;
   type: string;
   position: { x: number; y: number };
+  selected?: boolean;
   data: { kind: "action" | "trigger"; metadata: unknown };
   credentialId?: string;
 };

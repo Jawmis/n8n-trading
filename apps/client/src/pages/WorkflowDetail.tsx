@@ -83,7 +83,11 @@ export default function WorkflowDetail() {
   }
 
   const onNodesChange = useCallback(
-    (changes: NodeChange[]) => setNodes((nds) => applyNodeChanges(changes, nds) as EditorWorkflowNode[]),
+    (changes: NodeChange[]) => {
+      setNodes((nds) => applyNodeChanges(changes, nds) as EditorWorkflowNode[]);
+      const removed = new Set(changes.filter((change) => change.type === 'remove').map((change) => change.id));
+      if (removed.size > 0) setEdges((current) => current.filter((edge) => !removed.has(edge.source) && !removed.has(edge.target)));
+    },
     []
   );
 
@@ -139,6 +143,13 @@ export default function WorkflowDetail() {
     }
   }
 
+  function deleteSelectedNodes() {
+    const selected = new Set(nodes.filter((node) => node.selected).map((node) => node.id));
+    if (selected.size === 0) return;
+    setNodes((current) => current.filter((node) => !selected.has(node.id)));
+    setEdges((current) => current.filter((edge) => !selected.has(edge.source) && !selected.has(edge.target)));
+  }
+
   if (loadError) return <div className="p-6 text-red-600"><p>{loadError}</p><Link className="underline" to="/dashboard">Back to dashboard</Link></div>;
   if (!workflow) return <p className="p-6 text-muted-foreground">Loading workflow...</p>;
 
@@ -147,7 +158,13 @@ export default function WorkflowDetail() {
       {showTriggerSheet && <TriggerSheet onSelect={addTrigger} />}
       {showActionSheet && <ActionSheet onClose={() => setShowActionSheet(false)} onSelect={addAction} />}
       <div className="flex items-center justify-between p-4 border-b">
-        <h1 className="text-xl font-semibold">{workflow.name || 'Untitled workflow'}</h1>
+        <input
+          aria-label="Workflow name"
+          className="min-w-52 rounded-md border px-3 py-2 text-xl font-semibold"
+          value={workflow.name}
+          onChange={(event) => setWorkflow({ ...workflow, name: event.target.value })}
+          placeholder="Untitled workflow"
+        />
         <div className="flex gap-2">
           <button
             onClick={async () => {
@@ -169,6 +186,9 @@ export default function WorkflowDetail() {
             className="px-4 py-2 rounded-md bg-primary text-primary-foreground"
           >
             + Add task
+          </button>
+          <button onClick={deleteSelectedNodes} disabled={!nodes.some((node) => node.selected)} className="px-4 py-2 rounded-md border disabled:opacity-50">
+            Delete selected
           </button>
           <button onClick={handleRun} disabled={running} className="px-4 py-2 rounded-md bg-green-600 text-white disabled:opacity-50">
             {running ? 'Queueing...' : 'Run now'}
