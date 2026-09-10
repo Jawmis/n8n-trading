@@ -345,7 +345,11 @@ app.post("/credentials/:credentialId/test", authMiddleware, async (req, res) => 
             res.status(409).json({ message: "Credential is revoked" });
             return;
         }
-        decryptCredential(credential.toObject());
+        decryptCredential({
+            ciphertext: credential.ciphertext,
+            iv: credential.iv,
+            authTag: credential.authTag,
+        });
         res.json({ ok: true });
     } catch {
         res.status(422).json({ ok: false, message: "Credential could not be decrypted" });
