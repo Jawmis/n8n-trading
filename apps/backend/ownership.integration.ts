@@ -186,4 +186,22 @@ describe("workflow ownership integration", () => {
     const claims = await Promise.all([claim(), claim()]);
     expect(claims.filter(Boolean)).toHaveLength(1);
   });
+
+  integrationTest("round trips the canonical workflow DTO through persistence and execution queueing", async () => {
+    const payload = {
+      nodes: [{ nodeId: "timer", type: "timer", id: "trigger", position: { x: 40, y: 80 }, data: { kind: "TRIGGER", metadata: { time: 90 } } }],
+      edges: [],
+    };
+    const created = await request("/workflow", { method: "POST", body: JSON.stringify(payload) });
+    expect(created.status).toBe(200);
+    const createdId = (await created.json() as { id: string }).id;
+    const loaded = await request(`/workflow/${createdId}`);
+    const loadedBody = await loaded.json() as { nodes: unknown[]; edges: unknown[] };
+    expect(loaded.status).toBe(200);
+    expect(loadedBody.nodes).toEqual(payload.nodes);
+    expect(loadedBody.edges).toEqual(payload.edges);
+    expect((await request(`/workflow/${createdId}/execute`, { method: "POST" })).status).toBe(200);
+    await ExecutionModel.deleteMany({ workflowId: createdId });
+    await WorkflowModel.deleteOne({ _id: createdId });
+  });
 });
