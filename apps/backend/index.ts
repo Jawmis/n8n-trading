@@ -10,6 +10,7 @@ import cors from 'cors';
 import { hashPassword, verifyPassword } from './password';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
+import { parsePagination } from './api-validation';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const MONGO_URL = process.env.MONGO_URL;
@@ -225,6 +226,10 @@ app.put("/workflow/:workflowId", authMiddleware,async(req, res) => {
 });
 
 app.post("/workflow/:workflowId/execute", authMiddleware, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.workflowId)) {
+        res.status(404).json({ message: "Workflow not found" });
+        return;
+    }
     try {
         const workflow = await WorkflowModel.findById(req.params.workflowId);
         if (!workflow || workflow.userId.toString() !== req.userId) {
@@ -351,8 +356,12 @@ app.get("/workflow/executions/:workflowId",authMiddleware, async(req, res) => {
         res.status(404).json({ message: "Workflow not found" });
         return;
     }
-    const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
-    const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(req.query.pageSize ?? "25"), 10) || 25));
+    const pagination = parsePagination(req.query.page, req.query.pageSize);
+    if (!pagination) {
+        res.status(400).json({ message: "Invalid pagination parameters" });
+        return;
+    }
+    const { page, pageSize } = pagination;
     const [executions, total] = await Promise.all([
         ExecutionModel.find({ workflowId: workflow._id })
             .sort({ startTime: -1, _id: -1 })
