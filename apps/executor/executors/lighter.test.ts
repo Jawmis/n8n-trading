@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { executeLighter } from "./lighter";
+import { executeLighter, normalizeOrderBooks } from "./lighter";
 
 const node = {
   id: "trade",
@@ -20,6 +20,11 @@ beforeEach(() => {
 });
 
 describe("Lighter action adapter", () => {
+  test("normalizes the live API order_books response envelope", () => {
+    expect(normalizeOrderBooks({ order_books: [{ symbol: "BTC", market_id: 1 }] })).toEqual([{ symbol: "BTC", market_id: 1 }]);
+    expect(normalizeOrderBooks({ unexpected: [] })).toEqual([]);
+  });
+
   test("redacts credentials and normalizes paper orders", async () => {
     (globalThis as typeof globalThis & { LIGHTER_CLIENT?: unknown }).LIGHTER_CLIENT = {
       getMarketPrice: async () => ({ price: 100.123, priceDecimals: 2, quantityDecimals: 3 }),

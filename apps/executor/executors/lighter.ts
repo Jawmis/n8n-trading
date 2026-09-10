@@ -6,6 +6,15 @@ export interface LighterOrder { asset: "SOL" | "BTC" | "ETH"; quantity: number; 
 export interface LighterClient { getMarketPrice(asset: string): Promise<{ price: number; priceDecimals?: number; quantityDecimals?: number }>; getPositionNotional?: (asset: string) => Promise<number>; placeOrder(order: LighterOrder & { price: number }): Promise<unknown>; getOrderStatus?: (asset: string, orderId: number) => Promise<unknown>; cancelOrder?: (asset: string, orderId: number) => Promise<unknown>; close?: () => Promise<void>; }
 
 type Market = { helper: MarketHelper; priceDecimals: number; quantityDecimals: number };
+type OrderBookSummary = { symbol: string; market_id: number };
+
+export function normalizeOrderBooks(response: unknown): OrderBookSummary[] {
+  if (Array.isArray(response)) return response as OrderBookSummary[];
+  if (response && typeof response === "object" && Array.isArray((response as { order_books?: unknown }).order_books)) {
+    return (response as { order_books: OrderBookSummary[] }).order_books;
+  }
+  return [];
+}
 
 /** Signed production adapter backed by the Lighter SDK's WASM signer. */
 export class SdkLighterClient implements LighterClient {
@@ -33,7 +42,7 @@ export class SdkLighterClient implements LighterClient {
     const normalized = asset.toUpperCase();
     const cached = this.markets.get(normalized);
     if (cached) return cached;
-    const books = await this.orderApi.getOrderBooks();
+    const books = normalizeOrderBooks(await this.orderApi.getOrderBooks());
     const book = books.find((candidate) => candidate.symbol.toUpperCase() === normalized || candidate.symbol.toUpperCase().startsWith(`${normalized}-`));
     if (!book) throw new Error(`Lighter market not found for ${normalized}`);
     const helper = new MarketHelper(book.market_id, this.orderApi);
