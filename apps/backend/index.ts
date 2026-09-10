@@ -336,7 +336,7 @@ app.post("/credentials/:credentialId/test", authMiddleware, async (req, res) => 
     }
     try {
         const credential = await CredentialModel.findOne({ _id: req.params.credentialId, userId: req.userId })
-            .select("+ciphertext +iv +authTag revokedAt");
+            .select("ciphertext iv authTag revokedAt");
         if (!credential) {
             res.status(404).json({ message: "Credential not found" });
             return;

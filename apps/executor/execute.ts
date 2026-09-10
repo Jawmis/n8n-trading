@@ -31,7 +31,7 @@ export async function executeRecursive(workflow: WorkflowLike, currentNodeId: st
   await Promise.all(children.map(async (node) => {
     if (isAction(node)) {
       if (!node.credentialId || !workflow.userId) throw new Error(`Action node ${node.id} has no credential reference`);
-      const credential = await CredentialModel.findOne({ _id: node.credentialId, userId: workflow.userId, revokedAt: null }).select("+ciphertext +iv +authTag");
+      const credential = await CredentialModel.findOne({ _id: node.credentialId, userId: workflow.userId, revokedAt: null }).select("ciphertext iv authTag");
       if (!credential) throw new Error(`Credential not found for action node ${node.id}`);
       await dispatchAction({
         ...node,
