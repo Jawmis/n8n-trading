@@ -9,6 +9,7 @@ import { authMiddleware, JWT_AUDIENCE, JWT_ISSUER } from './middleware';
 import cors from 'cors';
 import { hashPassword, verifyPassword } from './password';
 import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const MONGO_URL = process.env.MONGO_URL;
@@ -26,6 +27,33 @@ void mongoose.connect(MONGO_URL);
 
 const app = express();
 
+const metrics = {
+    requests: 0,
+    failures: 0,
+    totalDurationMs: 0,
+};
+
+app.use((req, res, next) => {
+    const requestId = req.header("x-request-id") || randomUUID();
+    const startedAt = performance.now();
+    res.setHeader("x-request-id", requestId);
+    res.on("finish", () => {
+        const durationMs = performance.now() - startedAt;
+        metrics.requests += 1;
+        metrics.totalDurationMs += durationMs;
+        if (res.statusCode >= 500) metrics.failures += 1;
+        console.log(JSON.stringify({
+            event: "http_request",
+            requestId,
+            method: req.method,
+            path: req.path,
+            status: res.statusCode,
+            durationMs: Math.round(durationMs * 100) / 100,
+        }));
+    });
+    next();
+});
+
 app.use(express.json({ limit: "1mb" }));
 
 app.use(cors({
@@ -40,6 +68,18 @@ app.get("/readyz", (_req, res) => {
         return;
     }
     res.json({ status: "ready" });
+});
+app.get("/metrics", (_req, res) => {
+    const averageDuration = metrics.requests === 0 ? 0 : metrics.totalDurationMs / metrics.requests;
+    res.type("text/plain").send([
+        "# TYPE http_requests_total counter",
+        `http_requests_total ${metrics.requests}`,
+        "# TYPE http_request_failures_total counter",
+        `http_request_failures_total ${metrics.failures}`,
+        "# TYPE http_request_duration_ms_avg gauge",
+        `http_request_duration_ms_avg ${averageDuration}`,
+        "",
+    ].join("\n"));
 });
 
 app.post("/signup", async (req, res) => {

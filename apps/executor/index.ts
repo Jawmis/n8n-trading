@@ -8,6 +8,8 @@ const JOB_LEASE_MS = 60_000;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 let stopping = false;
 let healthServer: ReturnType<typeof Bun.serve> | undefined;
+let pollCount = 0;
+let jobsStarted = 0;
 
 function startHealthServer() {
   const port = Number(process.env.EXECUTOR_HEALTH_PORT ?? 3001);
@@ -17,6 +19,13 @@ function startHealthServer() {
       const path = new URL(request.url).pathname;
       if (path === "/healthz") return Response.json({ status: "ok" });
       if (path === "/readyz") return Response.json({ status: mongoose.connection.readyState === 1 ? "ready" : "not_ready" }, { status: mongoose.connection.readyState === 1 ? 200 : 503 });
+      if (path === "/metrics") return new Response([
+        "# TYPE executor_polls_total counter",
+        `executor_polls_total ${pollCount}`,
+        "# TYPE executor_jobs_started_total counter",
+        `executor_jobs_started_total ${jobsStarted}`,
+        "",
+      ].join("\n"), { headers: { "content-type": "text/plain; version=0.0.4" } });
       return new Response("Not found", { status: 404 });
     },
   });
@@ -102,9 +111,11 @@ async function claimAndStartJob(now: number): Promise<boolean> {
 }
 
 export async function pollOnce(now = Date.now()): Promise<number> {
+  pollCount += 1;
   await enqueueTimerJobs(now);
   let started = 0;
   while (await claimAndStartJob(now)) started += 1;
+  jobsStarted += started;
   return started;
 }
 
