@@ -21,6 +21,15 @@ const CredentialPayloadSchema = z.object({
     secret: z.record(z.string(), z.unknown()).refine((secret) => Object.keys(secret).length > 0),
 }).strict();
 
+function lighterCredentialError(secret: Record<string, unknown>) {
+    if (typeof secret.apiKey !== "string" || secret.apiKey.length === 0) return "Lighter credential requires apiKey";
+    for (const field of ["accountIndex", "apiIndex"]) {
+        const value = secret[field];
+        if (!Number.isInteger(typeof value === "number" ? value : Number(value)) || Number(value) < 0) return `Lighter credential requires a non-negative integer ${field}`;
+    }
+    return null;
+}
+
 const app = express();
 
 const metrics = {
@@ -300,6 +309,11 @@ app.post("/credentials", authMiddleware, async (req, res) => {
         res.status(400).json({ message: "Invalid credential payload" });
         return;
     }
+    const validationError = lighterCredentialError(parsed.data.secret);
+    if (validationError) {
+        res.status(400).json({ message: validationError });
+        return;
+    }
     try {
         const encrypted = encryptCredential(parsed.data.secret);
         const credential = await CredentialModel.create({ userId: req.userId, provider: parsed.data.provider, ...encrypted });
@@ -317,6 +331,11 @@ app.put("/credentials/:credentialId", authMiddleware, async (req, res) => {
     const parsed = CredentialPayloadSchema.safeParse(req.body);
     if (!parsed.success) {
         res.status(400).json({ message: "Invalid credential payload" });
+        return;
+    }
+    const validationError = lighterCredentialError(parsed.data.secret);
+    if (validationError) {
+        res.status(400).json({ message: validationError });
         return;
     }
     try {
@@ -357,11 +376,16 @@ app.post("/credentials/:credentialId/test", authMiddleware, async (req, res) => 
             res.status(409).json({ message: "Credential is revoked" });
             return;
         }
-        decryptCredential({
+        const secret = decryptCredential({
             ciphertext: credential.ciphertext,
             iv: credential.iv,
             authTag: credential.authTag,
         });
+        const validationError = lighterCredentialError(secret);
+        if (validationError) {
+            res.status(422).json({ ok: false, message: validationError });
+            return;
+        }
         res.json({ ok: true });
     } catch (error) {
         console.error(JSON.stringify({ event: "credential_test_failed", credentialId: req.params.credentialId, reason: error instanceof Error ? error.message : String(error) }));
