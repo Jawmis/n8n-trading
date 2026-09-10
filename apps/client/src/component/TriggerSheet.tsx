@@ -21,6 +21,7 @@ import {
 import { useState } from "react";
 import { SUPPORTED_ASSETS } from "common/types";
 import type { PriceTriggerMetadata, TimerNodeMetadata } from "common/types";
+import { validateEditorNode } from "@/lib/editor-validation";
 
 
 
@@ -53,6 +54,7 @@ export const TriggerSheet = ({
         time: 3600
     });
     const [selectedTrigger, setSelectedTrigger] = useState(initialKind ?? SUPPORTED_TRIGGERS[0].id);
+    const [validationError, setValidationError] = useState<string | null>(null);
     return <Sheet open={true} onOpenChange={(open) => { if (!open) onClose?.(); }}>
 
         <SheetContent className="sm:max-w-md">
@@ -81,7 +83,7 @@ export const TriggerSheet = ({
                 </div>
                 {selectedTrigger === "timer" && <div className="space-y-2 rounded-lg border border-border p-4">
                     <div className="text-sm font-medium">Number of seconds</div>
-                     <Input value={metadeta.time} onChange={(e) => setMetadata((metadeta) => ({
+                     <Input type="number" min="0.000001" step="any" value={metadeta.time ?? ""} onChange={(e) => setMetadata((metadeta) => ({
                             ...metadeta,
                             time : Number(e.target.value)
                         }))}></Input>
@@ -90,7 +92,7 @@ export const TriggerSheet = ({
                 {selectedTrigger === "price-trigger" && <div className="space-y-4 rounded-lg border border-border p-4">
                     <div className="space-y-2">
                         <div className="text-sm font-medium">Price</div>
-                        <Input type="text" onChange={(e) => setMetadata((m) => ({
+                        <Input type="number" min="0.000001" step="any" value={metadeta.price ?? ""} onChange={(e) => setMetadata((m) => ({
                             ...m,
                             price: Number(e.target.value)
                         }))}></Input>
@@ -118,11 +120,15 @@ export const TriggerSheet = ({
             </div>
             <SheetFooter className="mt-6">
                 <Button onClick={() => {
+                    const error = validateEditorNode(selectedTrigger as NodeKind, metadeta as NodeMetadata);
+                    setValidationError(error);
+                    if (error) return;
                     onSelect(
                         selectedTrigger as NodeKind,
                         metadeta as NodeMetadata
                     )
-                }} type="submit" className="w-full">Create Trigger</Button>
+                }} type="submit" className="w-full">{initialKind ? "Update Trigger" : "Create Trigger"}</Button>
+                {validationError && <p role="alert" className="text-sm text-red-600">{validationError}</p>}
 
             </SheetFooter>
         </SheetContent>

@@ -22,6 +22,7 @@ import { useEffect, useState } from "react";
 import { SUPPORTED_ASSETS } from "common/types";
 import type { PriceTriggerMetadata, TimerNodeMetadata, TradingMetadata } from "common/types";
 import { apiListCredentials, type Credential } from "@/lib/http";
+import { validateEditorNode } from "@/lib/editor-validation";
 
 
 
@@ -49,6 +50,7 @@ export const ActionSheet = ({
     const [selectedAction, setSelectedAction] = useState(SUPPORTED_ACTIONS[0].id);
     const [credentials, setCredentials] = useState<Credential[]>([]);
     const [selectedCredentialId, setSelectedCredentialId] = useState<string | undefined>(initialCredentialId);
+    const [validationError, setValidationError] = useState<string | null>(null);
     useEffect(() => {
         apiListCredentials().then(setCredentials).catch(() => setCredentials([]));
     }, []);
@@ -90,7 +92,7 @@ export const ActionSheet = ({
                     </div>
                     <div className="space-y-2">
                         <div className="text-sm font-medium">Type</div>
-                        <Select value={metadeta.asset} onValueChange={(value) => setMetadata((metadeta) => ({
+                        <Select value={metadeta.type} onValueChange={(value) => setMetadata((metadeta) => ({
                                     ...metadeta,
                                     type: value as TradingMetadata["type"]
                         }))}>
@@ -132,7 +134,7 @@ export const ActionSheet = ({
 
                     <div className="space-y-2">
                         <div className="text-sm font-medium">Qty</div>
-                        <Input type="number" min="0" value={metadeta.qty ?? ""} onChange={(e) => setMetadata((metadeta) => ({
+                        <Input type="number" min="0.00000001" step="any" value={metadeta.qty ?? ""} onChange={(e) => setMetadata((metadeta) => ({
                             ...metadeta,
                             qty : Number(e.target.value)
                         }))}></Input>
@@ -156,12 +158,16 @@ export const ActionSheet = ({
             </div>
             <SheetFooter className="mt-6">
                 <Button onClick={() => {
-                    onSelect(
+                            const error = validateEditorNode(selectedAction as NodeKind, metadeta as NodeMetadata, selectedCredentialId);
+                            setValidationError(error);
+                            if (error) return;
+                            onSelect(
                         selectedAction as NodeKind,
                         metadeta as NodeMetadata,
                         selectedCredentialId,
                     )
-                }} type="submit" disabled={!selectedCredentialId} className="w-full">Create Action</Button>
+                        }} type="submit" className="w-full">{initialMetadata ? "Update Action" : "Create Action"}</Button>
+                    {validationError && <p role="alert" className="text-sm text-red-600">{validationError}</p>}
 
             </SheetFooter>
         </SheetContent>
