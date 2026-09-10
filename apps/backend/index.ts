@@ -249,9 +249,14 @@ app.post("/workflow/:workflowId/execute", authMiddleware, async (req, res) => {
             workflowId: workflow._id,
             kind: "manual",
             status: "pending",
+            queueKey: `${workflow._id}:manual`,
         });
         res.json({ message: "Workflow queued for execution" });
-    } catch {
+    } catch (error) {
+        if ((error as { code?: number })?.code === 11000) {
+            res.status(409).json({ message: "Workflow already has an active execution" });
+            return;
+        }
         res.status(500).json({ message: "Failed to queue workflow" });
     }
 });

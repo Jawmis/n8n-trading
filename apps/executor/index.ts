@@ -119,7 +119,7 @@ async function claimAndStartJob(now: number): Promise<boolean> {
   if (!job) return false;
   const workflow = await WorkflowModel.findById(job.workflowId);
   if (!workflow) {
-    await ExecutionModel.updateOne({ _id: job._id }, { $set: { status: "failure", endTime: new Date(now), error: "Workflow not found", leaseUntil: null } });
+    await ExecutionModel.updateOne({ _id: job._id }, { $set: { status: "failure", endTime: new Date(now), error: "Workflow not found", leaseUntil: null }, $unset: { queueKey: 1 } });
     return true;
   }
   void executeWorkflow(workflow as unknown as WorkflowLike, job._id).catch((error) => console.error(`[executor] job ${job._id} failed`, error));

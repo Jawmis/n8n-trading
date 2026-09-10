@@ -61,11 +61,11 @@ export async function executeWorkflow(workflow: WorkflowLike, executionId?: unkn
     : undefined;
   try {
     await executeRecursive(workflow, trigger.id);
-    await ExecutionModel.updateOne({ _id: execution._id }, { $set: { status: status.success, endTime: new Date(), leaseUntil: null } });
+    await ExecutionModel.updateOne({ _id: execution._id }, { $set: { status: status.success, endTime: new Date(), leaseUntil: null }, $unset: { queueKey: 1 } });
     return execution._id;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await ExecutionModel.updateOne({ _id: execution._id }, { $set: { status: status.failure, endTime: new Date(), error: message, leaseUntil: null } });
+    await ExecutionModel.updateOne({ _id: execution._id }, { $set: { status: status.failure, endTime: new Date(), error: message, leaseUntil: null }, $unset: { queueKey: 1 } });
     throw error;
   } finally {
     if (heartbeat) clearInterval(heartbeat);

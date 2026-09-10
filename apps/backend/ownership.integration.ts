@@ -70,7 +70,7 @@ describe("workflow ownership integration", () => {
 
   afterAll(async () => {
     if (process.env.RUN_INTEGRATION_TESTS !== "1") return;
-    await ExecutionModel.deleteMany({ workflowId });
+    await ExecutionModel.deleteMany({ workflowId: { $in: [workflowId, userBWorkflowId] } });
     await WorkflowModel.deleteMany({ _id: { $in: [workflowId, userBWorkflowId] } });
     await UserModel.deleteMany({ _id: { $in: [userA, userB] } });
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -160,5 +160,14 @@ describe("workflow ownership integration", () => {
     });
     expect(oversized.status).toBe(413);
     expect((await oversized.json() as { message?: string }).message).toBe("Request body is too large");
+  });
+
+  integrationTest("rejects overlapping manual executions for one workflow", async () => {
+    const [first, second] = await Promise.all([
+      request(`/workflow/${userBWorkflowId}/execute`, { method: "POST" }),
+      request(`/workflow/${userBWorkflowId}/execute`, { method: "POST" }),
+    ]);
+    expect([first.status, second.status].sort()).toEqual([200, 409]);
+    expect(await ExecutionModel.countDocuments({ workflowId: userBWorkflowId, status: "pending" })).toBe(1);
   });
 });
