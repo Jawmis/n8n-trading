@@ -24,7 +24,7 @@ export const CreateWorkflowSchema = z.object({
 export const UpdateWorkflowSchema = CreateWorkflowSchema;
 const TimerMetadataSchema = z.object({ time: z.number().finite().positive() }).strict();
 const PriceTriggerMetadataSchema = z.object({ asset: z.enum(SUPPORTED_ASSETS), price: z.number().finite().positive(), decimals: z.number().int().nonnegative().optional() }).strict();
-const TradingMetadataSchema = z.object({ type: z.enum(["LONG", "SHORT"]), qty: z.number().finite().positive(), symbol: z.enum(SUPPORTED_ASSETS) }).strict();
+const TradingMetadataSchema = z.object({ type: z.enum(["LONG", "SHORT"]), qty: z.number().finite().positive(), symbol: z.enum(SUPPORTED_ASSETS), leverage: z.number().finite().positive().optional(), price: z.number().finite().positive().optional(), reduceOnly: z.boolean().optional() }).strict();
 
 function validateNodeMetadata(node: z.infer<typeof NodeSchema>) {
     if (node.type === "timer" && node.data.kind === "TRIGGER") return TimerMetadataSchema.safeParse(node.data.metadata);

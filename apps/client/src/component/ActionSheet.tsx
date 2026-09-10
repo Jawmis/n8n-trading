@@ -133,6 +133,20 @@ export const ActionSheet = ({
                             qty : Number(e.target.value)
                         }))}></Input>
                     </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                            <div className="text-sm font-medium">Limit price (optional)</div>
+                            <Input type="number" min="0" value={metadeta.price ?? ""} onChange={(e) => setMetadata((current) => ({ ...current, price: e.target.value ? Number(e.target.value) : undefined }))} />
+                        </div>
+                        <div className="space-y-2">
+                            <div className="text-sm font-medium">Leverage (optional)</div>
+                            <Input type="number" min="0" step="0.1" value={metadeta.leverage ?? ""} onChange={(e) => setMetadata((current) => ({ ...current, leverage: e.target.value ? Number(e.target.value) : undefined }))} />
+                        </div>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={metadeta.reduceOnly === true} onChange={(e) => setMetadata((current) => ({ ...current, reduceOnly: e.target.checked }))} />
+                        Reduce-only order
+                    </label>
                 </div>
                 }
             </div>
