@@ -22,6 +22,9 @@ export default function Dashboard() {
         <Link to="/create-workflow" className="px-4 py-2 rounded-md bg-primary text-primary-foreground">
           New Workflow
         </Link>
+        <Link to="/credentials" className="px-4 py-2 rounded-md border">
+          Credentials
+        </Link>
         <button onClick={() => apiSignout().then(() => navigate('/auth'))} className="px-4 py-2 rounded-md border">
           Sign out
         </button>

@@ -81,7 +81,7 @@ export const ActionSheet = ({
                         <div className="text-sm font-medium">Credential</div>
                         <Select value={selectedCredentialId} onValueChange={setSelectedCredentialId}>
                             <SelectTrigger className="w-full"><SelectValue placeholder="Select a broker credential" /></SelectTrigger>
-                            <SelectContent><SelectGroup>{credentials.filter((credential) => credential.provider === selectedAction).map((credential) => <SelectItem key={credential._id} value={credential._id}>{credential.provider} · {credential._id.slice(-6)}</SelectItem>)}</SelectGroup></SelectContent>
+                            <SelectContent><SelectGroup>{credentials.filter((credential) => credential.provider === selectedAction && !credential.revokedAt).map((credential) => <SelectItem key={credential._id} value={credential._id}>{credential.provider} · {credential._id.slice(-6)}</SelectItem>)}</SelectGroup></SelectContent>
                         </Select>
                     </div>
                     <div className="space-y-2">

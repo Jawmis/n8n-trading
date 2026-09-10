@@ -6,6 +6,7 @@ import Dashboard from '@/pages/Dashboard';
 import CreateWorkflow from '@/pages/CreateWorkflow';
 import WorkflowDetail from '@/pages/WorkflowDetail';
 import WorkflowExecutions from '@/pages/WorkflowExecutions';
+import Credentials from '@/pages/Credentials';
 import { getAuthToken } from '@/lib/http';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -20,6 +21,7 @@ export default function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/auth" element={<Auth />} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/credentials" element={<ProtectedRoute><Credentials /></ProtectedRoute>} />
         <Route path="/create-workflow" element={<ProtectedRoute><CreateWorkflow /></ProtectedRoute>} />
         <Route path="/workflow/:workflowId" element={<ProtectedRoute><WorkflowDetail /></ProtectedRoute>} />
         <Route path="/workflow/:workflowId/executions" element={<ProtectedRoute><WorkflowExecutions /></ProtectedRoute>} />
