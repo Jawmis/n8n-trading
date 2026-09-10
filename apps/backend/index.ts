@@ -478,12 +478,22 @@ app.get("/workflow/executions/:workflowId",authMiddleware, async(req, res) => {
         return;
     }
     const { page, pageSize } = pagination;
+    const requestedStatus = typeof req.query.status === "string" ? req.query.status : undefined;
+    const statuses = ["pending", "running", "success", "failure"] as const;
+    if (requestedStatus && !statuses.includes(requestedStatus as typeof statuses[number])) {
+        res.status(400).json({ message: "Invalid execution status" });
+        return;
+    }
+    const executionFilter: { workflowId: mongoose.Types.ObjectId; status?: typeof statuses[number] } = {
+        workflowId: workflow._id,
+        ...(requestedStatus ? { status: requestedStatus as typeof statuses[number] } : {}),
+    };
     const [executions, total] = await Promise.all([
-        ExecutionModel.find({ workflowId: workflow._id })
+        ExecutionModel.find(executionFilter)
             .sort({ startTime: -1, _id: -1 })
             .skip((page - 1) * pageSize)
             .limit(pageSize),
-        ExecutionModel.countDocuments({ workflowId: workflow._id }),
+        ExecutionModel.countDocuments(executionFilter),
     ]);
     res.json({ items: executions, page, pageSize, total, totalPages: Math.ceil(total / pageSize) });
 });

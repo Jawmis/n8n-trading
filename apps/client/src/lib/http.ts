@@ -146,11 +146,12 @@ export async function apiListWorkflows(): Promise<Workflow[]> {
   return res.data;
 }
 
-export type WorkflowExecution = { _id?: string; id?: string; status?: string; startTime?: string; endTime?: string; error?: string; results?: Array<{ nodeId: string; result: unknown }> };
+export type ExecutionStatus = "pending" | "running" | "success" | "failure";
+export type WorkflowExecution = { _id?: string; id?: string; status?: ExecutionStatus; startTime?: string; endTime?: string; error?: string; results?: Array<{ nodeId: string; result: unknown }> };
 export type PaginatedExecutions = { items: WorkflowExecution[]; page: number; pageSize: number; total: number; totalPages: number };
 
-export async function apiListExecutions(workflowId: string, page = 1, pageSize = 25): Promise<PaginatedExecutions> {
-  const res = await api.get<PaginatedExecutions>(`/workflow/executions/${workflowId}`, { params: { page, pageSize } });
+export async function apiListExecutions(workflowId: string, page = 1, pageSize = 25, status?: ExecutionStatus): Promise<PaginatedExecutions> {
+  const res = await api.get<PaginatedExecutions>(`/workflow/executions/${workflowId}`, { params: { page, pageSize, ...(status ? { status } : {}) } });
   return res.data;
 }
 
