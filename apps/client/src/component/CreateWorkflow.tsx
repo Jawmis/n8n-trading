@@ -7,20 +7,16 @@ import { Timer } from '@/nodes/triggers/Timer';
 import { Lighter} from '@/nodes/actions/Lighter';
 import { type PriceTriggerMetadata, type TimerNodeMetadata, type TradingMetadata } from 'common/types';
 import { ActionSheet } from './ActionSheet';
-import { Backpack } from '@/nodes/actions/Backpack';
-import { HyperLiquid } from '@/nodes/actions/Hyperliquid';
 
 const nodeTypes = {
   "price-trigger": PriceTrigger,
   "timer": Timer,
   "lighter": Lighter,
-  "backpack": Backpack,
-  "hyperliquid" : HyperLiquid
 
 };
 
  
-export type NodeKind = "price-trigger" | "timer" | "hyperliquid" | "backpack" | "lighter"; 
+export type NodeKind = "price-trigger" | "timer" | "lighter";
 
 interface NodeType{
   type: NodeKind,

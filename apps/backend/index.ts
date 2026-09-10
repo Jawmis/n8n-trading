@@ -20,7 +20,7 @@ if (!MONGO_URL || !JWT_SECRET || !CREDENTIAL_ENCRYPTION_KEY) {
 }
 
 const CredentialPayloadSchema = z.object({
-    provider: z.enum(["lighter", "hyperliquid", "backpack"]),
+    provider: z.literal("lighter"),
     secret: z.record(z.string(), z.unknown()).refine((secret) => Object.keys(secret).length > 0),
 }).strict();
 
