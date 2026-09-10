@@ -113,6 +113,11 @@ export default function WorkflowDetail() {
     if (!workflowId || !workflow) return;
     setSaving(true);
     setSaveError(null);
+    if (!workflow.name.trim()) {
+      setSaveError('Workflow name cannot be blank.');
+      setSaving(false);
+      return;
+    }
     try {
       const payload = {
         name: workflow.name,
