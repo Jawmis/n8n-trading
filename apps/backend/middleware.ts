@@ -16,7 +16,8 @@ export function verifyAccessToken(token: string, secret = process.env.JWT_SECRET
     });
     if (typeof response === "string"
         || typeof response.id !== "string"
-        || typeof response.tokenVersion !== "number") {
+        || typeof response.tokenVersion !== "number"
+        || response.purpose !== "access") {
         throw new Error("Invalid authentication token");
     }
     return response;

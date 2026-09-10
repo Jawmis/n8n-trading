@@ -14,7 +14,7 @@ let workflowId: mongoose.Types.ObjectId;
 let userBWorkflowId: mongoose.Types.ObjectId;
 
 function token(userId: mongoose.Types.ObjectId) {
-  return jwt.sign({ id: userId.toString(), tokenVersion: 0 }, secret, {
+  return jwt.sign({ id: userId.toString(), tokenVersion: 0, purpose: "access" }, secret, {
     algorithm: "HS256",
     expiresIn: "1h",
     issuer: JWT_ISSUER,

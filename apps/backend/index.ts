@@ -126,6 +126,7 @@ app.post("/signin", async (req, res) => {
             const token = jwt.sign({
                 id: user._id,
                 tokenVersion: user.tokenVersion,
+                purpose: "access",
             }, JWT_SECRET, {
                 algorithm: "HS256",
                 expiresIn: "1h",

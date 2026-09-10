@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { JWT_AUDIENCE, JWT_ISSUER, verifyAccessToken } from "./middleware";
 
 const secret = "auth-test-secret";
-const claims = { id: "507f1f77bcf86cd799439011", tokenVersion: 0 };
+const claims = { id: "507f1f77bcf86cd799439011", tokenVersion: 0, purpose: "access" };
 
 function sign(overrides: Record<string, unknown> = {}) {
     return jwt.sign({ ...claims, ...overrides }, secret, {
@@ -22,6 +22,7 @@ describe("access token validation", () => {
     test("rejects missing required claims", () => {
         expect(() => verifyAccessToken(sign({ tokenVersion: undefined }), secret)).toThrow();
         expect(() => verifyAccessToken(sign({ id: undefined }), secret)).toThrow();
+        expect(() => verifyAccessToken(sign({ purpose: "refresh" }), secret)).toThrow();
     });
 
     test("rejects a wrong issuer or audience", () => {
