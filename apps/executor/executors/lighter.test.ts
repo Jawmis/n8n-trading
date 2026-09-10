@@ -50,4 +50,13 @@ describe("Lighter action adapter", () => {
     const result = await executeLighter({ ...node, data: { kind: "ACTION", metadata: { type: "SHORT", symbol: "BTC", qty: 1 } } });
     expect(result).toMatchObject({ mode: "paper", order: { side: "short", asset: "BTC", quantity: 1 } });
   });
+
+  test("rejects quantities and limit prices beyond broker precision", async () => {
+    (globalThis as typeof globalThis & { LIGHTER_CLIENT?: unknown }).LIGHTER_CLIENT = {
+      getMarketPrice: async () => ({ price: 100, priceDecimals: 2, quantityDecimals: 3 }),
+      placeOrder: async () => ({ transactionHash: "tx-1" }),
+    };
+    await expect(executeLighter({ ...node, data: { kind: "ACTION", metadata: { type: "LONG", symbol: "BTC", qty: 1.0001 } } })).rejects.toThrow("quantity");
+    await expect(executeLighter({ ...node, data: { kind: "ACTION", metadata: { type: "LONG", symbol: "BTC", qty: 1, price: 100.001 } } })).rejects.toThrow("price");
+  });
 });

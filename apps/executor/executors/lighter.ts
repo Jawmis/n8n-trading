@@ -65,11 +65,24 @@ export class SdkLighterClient implements LighterClient {
     if (!this.signer) throw new Error("Lighter live trading requires an API private key");
     const market = await this.market(order.asset);
     await this.signer.initialize();
+    const config = market.helper.getConfig();
+    const baseAmount = market.helper.amountToUnits(order.quantity);
+    if (baseAmount <= 0 || market.helper.unitsToAmount(baseAmount) !== order.quantity || order.quantity < config.minOrderSize) {
+      throw new Error(`Lighter quantity has invalid precision or is below the minimum for ${order.asset}`);
+    }
+    const priceUnits = market.helper.priceToUnits(order.price);
+    if (priceUnits <= 0 || market.helper.unitsToPrice(priceUnits) !== order.price) {
+      throw new Error(`Lighter price has invalid precision for ${order.asset}`);
+    }
+    if (order.leverage !== undefined) {
+      const [, leverageHash, leverageError] = await this.signer.updateLeverage(config.index, 0, order.leverage);
+      if (leverageError || !leverageHash) throw new Error(`Lighter leverage update rejected: ${leverageError ?? "missing transaction hash"}`);
+    }
     const [result, hash, error] = await this.signer.createMarketOrder({
-      marketIndex: market.helper.getConfig().index,
+      marketIndex: config.index,
       clientOrderIndex: Date.now(),
-      baseAmount: market.helper.amountToUnits(order.quantity),
-      avgExecutionPrice: market.helper.priceToUnits(order.price),
+      baseAmount,
+      avgExecutionPrice: priceUnits,
       isAsk: order.side === "short",
       reduceOnly: order.reduceOnly ?? false,
     });
@@ -113,7 +126,11 @@ export async function executeLighter(node: WorkflowNodeLike, client?: LighterCli
   const market = await exchange.getMarketPrice(order.asset);
   if (!Number.isFinite(market.price) || market.price <= 0) throw new Error("Lighter returned an invalid market price");
   const round = (value: number, decimals: number) => Number(value.toFixed(decimals));
-  const executableOrder = { ...order, quantity: round(order.quantity, market.quantityDecimals ?? 4), price: round(order.price ?? market.price, market.priceDecimals ?? 2) };
+  const quantity = round(order.quantity, market.quantityDecimals ?? 4);
+  const price = round(order.price ?? market.price, market.priceDecimals ?? 2);
+  if (quantity !== order.quantity) throw new Error("Lighter quantity has invalid precision");
+  if (order.price !== undefined && price !== order.price) throw new Error("Lighter price has invalid precision");
+  const executableOrder = { ...order, quantity, price };
   // Validate slippage only against a user-specified limit. The rounded market
   // execution price is an exchange encoding detail, not a user price bound.
   const maxPositionNotional = Number(process.env.MAX_POSITION_NOTIONAL ?? 0);
