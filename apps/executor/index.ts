@@ -1,11 +1,12 @@
 import mongoose from "mongoose";
 import { ExecutionModel, WorkflowModel } from "db/client";
 import { executeWorkflow, type WorkflowLike } from "./execute";
-import { crossedThreshold, type PriceDirection } from "./price";
+import { crossedThreshold, freshPrice, type PriceDirection, type PriceQuote } from "./price";
 
 export const POLL_INTERVAL_MS = 2_000;
 export const MAX_JOB_ATTEMPTS = 3;
 const JOB_LEASE_MS = 60_000;
+const PRICE_EVENT_BUCKET_MS = 10_000;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 let stopping = false;
 let healthServer: ReturnType<typeof Bun.serve> | undefined;
@@ -36,7 +37,7 @@ function isTimerTrigger(node: WorkflowLike["nodes"][number]) {
   return String(node.data?.kind).toLowerCase() === "trigger" && node.type === "timer";
 }
 
-type PriceFeed = { getPrice(asset: string): Promise<number> };
+type PriceFeed = { getPrice(asset: string): Promise<PriceQuote> };
 function priceFeed() {
   return (globalThis as typeof globalThis & { PRICE_FEED?: PriceFeed }).PRICE_FEED;
 }
@@ -60,14 +61,16 @@ async function enqueueTimerJobs(now: number) {
       const metadata = trigger.data?.metadata ?? {};
       if (!feed || typeof metadata.asset !== "string" || typeof metadata.price !== "number") continue;
       try {
-        const current = await feed.getPrice(metadata.asset);
+        const quote = freshPrice(await feed.getPrice(metadata.asset), now, Number(process.env.PRICE_FEED_MAX_AGE_MS ?? 30_000));
+        if (!quote) continue;
+        const current = quote.price;
         const key = `${workflow._id}:${trigger.id}`;
         const previous = lastPrices.get(key);
         lastPrices.set(key, current);
         if (previous === undefined || !crossedThreshold(previous, current, metadata.price, metadata.direction as PriceDirection | undefined)) continue;
-        await ExecutionModel.create({ workflowId: workflow._id, kind: "price", status: "pending", queueKey: `${key}:${now}` });
-      } catch {
-        // A stale or disconnected price feed must not trigger a trade.
+        await ExecutionModel.create({ workflowId: workflow._id, kind: "price", status: "pending", queueKey: `${key}:${Math.floor(quote.timestamp / PRICE_EVENT_BUCKET_MS)}` });
+      } catch (error) {
+        if ((error as { code?: number })?.code !== 11000) console.error("[executor] price trigger enqueue failed", error);
       }
       continue;
     }
