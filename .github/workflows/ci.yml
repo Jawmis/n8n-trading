@@ -8,6 +8,16 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:8
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -15,6 +25,7 @@ jobs:
           bun-version: 1.3.1
       - run: bun install --frozen-lockfile
       - run: bun run test
+      - run: cd apps/backend && MONGO_URL=mongodb://127.0.0.1:27017/trading-ci JWT_SECRET=ci-test-secret CREDENTIAL_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= bun run test:integration
       - run: bun run lint
       - run: bun run check-types
       - run: bun run build --filter=client

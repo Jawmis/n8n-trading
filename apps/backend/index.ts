@@ -15,16 +15,11 @@ import { parsePagination } from './api-validation';
 const JWT_SECRET = process.env.JWT_SECRET;
 const MONGO_URL = process.env.MONGO_URL;
 const CREDENTIAL_ENCRYPTION_KEY = process.env.CREDENTIAL_ENCRYPTION_KEY;
-if (!MONGO_URL || !JWT_SECRET || !CREDENTIAL_ENCRYPTION_KEY) {
-    throw new Error("MONGO_URL, JWT_SECRET, and CREDENTIAL_ENCRYPTION_KEY are required");
-}
 
 const CredentialPayloadSchema = z.object({
     provider: z.literal("lighter"),
     secret: z.record(z.string(), z.unknown()).refine((secret) => Object.keys(secret).length > 0),
 }).strict();
-
-void mongoose.connect(MONGO_URL);
 
 const app = express();
 
@@ -113,6 +108,10 @@ app.post("/signin", async (req, res) => {
         res.status(400).json({
             message : "Incorrect Inputs"
         })
+        return;
+    }
+    if (!JWT_SECRET) {
+        res.status(500).json({ message: "Authentication is not configured" });
         return;
     }
     try {
@@ -386,10 +385,28 @@ const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
 };
 app.use(errorHandler);
 
-const server = app.listen(process.env.PORT || 3000);
+let server: ReturnType<typeof app.listen> | undefined;
+export async function startServer() {
+    if (!MONGO_URL || !JWT_SECRET || !CREDENTIAL_ENCRYPTION_KEY) {
+        throw new Error("MONGO_URL, JWT_SECRET, and CREDENTIAL_ENCRYPTION_KEY are required");
+    }
+    await mongoose.connect(MONGO_URL);
+    server = app.listen(process.env.PORT || 3000);
+    return server;
+}
+
 async function shutdown() {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (server) await new Promise<void>((resolve) => server?.close(() => resolve()));
     await mongoose.disconnect();
 }
-process.once("SIGTERM", () => void shutdown());
-process.once("SIGINT", () => void shutdown());
+
+export { app };
+
+if (import.meta.main) {
+    void startServer().catch((error) => {
+        console.error("[backend] unable to start", error);
+        process.exitCode = 1;
+    });
+    process.once("SIGTERM", () => void shutdown());
+    process.once("SIGINT", () => void shutdown());
+}
