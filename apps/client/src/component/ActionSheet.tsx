@@ -35,16 +35,20 @@ const SUPPORTED_ACTIONS = [{
 
 export const ActionSheet = ({
     onSelect,
-    onClose
+    onClose,
+    initialMetadata,
+    initialCredentialId,
 }: {
     onSelect: (kind: NodeKind, metadata: NodeMetadata, credentialId?: string) => void,
-    onClose?: () => void
+    onClose?: () => void,
+    initialMetadata?: Partial<TradingMetadata & PriceTriggerMetadata & TimerNodeMetadata>,
+    initialCredentialId?: string,
 }
 ) => {
-    const [metadeta, setMetadata] = useState<Partial<TradingMetadata & PriceTriggerMetadata & TimerNodeMetadata>>({});
+    const [metadeta, setMetadata] = useState<Partial<TradingMetadata & PriceTriggerMetadata & TimerNodeMetadata>>(initialMetadata ?? {});
     const [selectedAction, setSelectedAction] = useState(SUPPORTED_ACTIONS[0].id);
     const [credentials, setCredentials] = useState<Credential[]>([]);
-    const [selectedCredentialId, setSelectedCredentialId] = useState<string>();
+    const [selectedCredentialId, setSelectedCredentialId] = useState<string | undefined>(initialCredentialId);
     useEffect(() => {
         apiListCredentials().then(setCredentials).catch(() => setCredentials([]));
     }, []);

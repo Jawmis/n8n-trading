@@ -40,6 +40,7 @@ export default function WorkflowDetail() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showTriggerSheet, setShowTriggerSheet] = useState(false);
   const [showActionSheet, setShowActionSheet] = useState(false);
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [connectionSource, setConnectionSource] = useState<string | null>(null);
   const [actionPosition, setActionPosition] = useState<{ x: number; y: number } | null>(null);
 
@@ -66,11 +67,22 @@ export default function WorkflowDetail() {
       id: crypto.randomUUID(), nodeId: type, type, position: { x: 120, y: 220 },
       data: { kind: 'trigger', metadata },
     };
-    setNodes([node]);
+    if (editingNodeId) {
+      setNodes((current) => current.map((existing) => existing.id === editingNodeId ? { ...existing, type, nodeId: type, data: { kind: 'trigger', metadata } } : existing));
+      setEditingNodeId(null);
+    } else {
+      setNodes([node]);
+    }
     setShowTriggerSheet(false);
   }
 
   function addAction(type: NodeKind, metadata: NodeMetadata, credentialId?: string) {
+    if (editingNodeId) {
+      setNodes((current) => current.map((existing) => existing.id === editingNodeId ? { ...existing, type, nodeId: type, credentialId, data: { kind: 'action', metadata } } : existing));
+      setEditingNodeId(null);
+      setShowActionSheet(false);
+      return;
+    }
     const nodeId = crypto.randomUUID();
     const position = actionPosition ?? { x: 360 + nodes.length * 40, y: 220 + nodes.length * 30 };
     setNodes((current) => [...current, { id: nodeId, nodeId: type, type, position, data: { kind: 'action', metadata }, credentialId }]);
@@ -150,13 +162,21 @@ export default function WorkflowDetail() {
     setEdges((current) => current.filter((edge) => !selected.has(edge.source) && !selected.has(edge.target)));
   }
 
+  function editNode(nodeId: string) {
+    const node = nodes.find((candidate) => candidate.id === nodeId);
+    if (!node) return;
+    setEditingNodeId(nodeId);
+    if (node.data.kind === 'action') setShowActionSheet(true);
+    else setShowTriggerSheet(true);
+  }
+
   if (loadError) return <div className="p-6 text-red-600"><p>{loadError}</p><Link className="underline" to="/dashboard">Back to dashboard</Link></div>;
   if (!workflow) return <p className="p-6 text-muted-foreground">Loading workflow...</p>;
 
   return (
     <div className="h-screen flex flex-col">
-      {showTriggerSheet && <TriggerSheet onSelect={addTrigger} />}
-      {showActionSheet && <ActionSheet onClose={() => setShowActionSheet(false)} onSelect={addAction} />}
+      {showTriggerSheet && <TriggerSheet onClose={() => { setShowTriggerSheet(false); setEditingNodeId(null); }} initialKind={nodes.find((node) => node.id === editingNodeId)?.type as NodeKind | undefined} initialMetadata={nodes.find((node) => node.id === editingNodeId)?.data.metadata as Partial<import('common/types').PriceTriggerMetadata & import('common/types').TimerNodeMetadata> | undefined} onSelect={addTrigger} />}
+      {showActionSheet && <ActionSheet onClose={() => { setShowActionSheet(false); setEditingNodeId(null); }} initialMetadata={nodes.find((node) => node.id === editingNodeId)?.data.metadata as Partial<import('common/types').TradingMetadata & import('common/types').PriceTriggerMetadata & import('common/types').TimerNodeMetadata> | undefined} initialCredentialId={nodes.find((node) => node.id === editingNodeId)?.credentialId} onSelect={addAction} />}
       <div className="flex items-center justify-between p-4 border-b">
         <input
           aria-label="Workflow name"
@@ -226,6 +246,7 @@ export default function WorkflowDetail() {
               openActionSheet(connectionState.fromNode.id, connectionState.to ?? { x: 0, y: 0 });
             }
           }}
+          onNodeDoubleClick={(_event, node) => editNode(node.id)}
           onPaneClick={() => {
             if (nodes.length > 0) openActionSheet();
           }}

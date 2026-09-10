@@ -38,16 +38,22 @@ const SUPPORTED_TRIGGERS = [{
 
 
 export const TriggerSheet = ({
-    onSelect
+    onSelect,
+    onClose,
+    initialKind,
+    initialMetadata,
 }: {
-    onSelect: (kind: NodeKind, metadata: NodeMetadata) => void
+    onSelect: (kind: NodeKind, metadata: NodeMetadata) => void,
+    onClose?: () => void,
+    initialKind?: NodeKind,
+    initialMetadata?: Partial<PriceTriggerMetadata & TimerNodeMetadata>,
 }
 ) => {
-    const [metadeta, setMetadata] = useState<Partial<PriceTriggerMetadata & TimerNodeMetadata>>({
+    const [metadeta, setMetadata] = useState<Partial<PriceTriggerMetadata & TimerNodeMetadata>>(initialMetadata ?? {
         time: 3600
     });
-    const [selectedTrigger, setSelectedTrigger] = useState(SUPPORTED_TRIGGERS[0].id);
-    return <Sheet open={true}>
+    const [selectedTrigger, setSelectedTrigger] = useState(initialKind ?? SUPPORTED_TRIGGERS[0].id);
+    return <Sheet open={true} onOpenChange={(open) => { if (!open) onClose?.(); }}>
 
         <SheetContent className="sm:max-w-md">
             <SheetHeader>
