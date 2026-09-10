@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { ExecutionModel, WorkflowModel } from "db/client";
 import { executeWorkflow, type WorkflowLike } from "./execute";
 import { crossedThreshold, freshPrice, type PriceDirection, type PriceQuote } from "./price";
+import { SUPPORTED_ASSETS } from "common/types";
 
 export const POLL_INTERVAL_MS = 2_000;
 export const MAX_JOB_ATTEMPTS = 3;
@@ -12,6 +13,8 @@ let stopping = false;
 let healthServer: ReturnType<typeof Bun.serve> | undefined;
 let pollCount = 0;
 let jobsStarted = 0;
+let priceTriggersCrossed = 0;
+let priceTriggerJobsEnqueued = 0;
 
 function startHealthServer() {
   const port = Number(process.env.EXECUTOR_HEALTH_PORT ?? 3001);
@@ -26,6 +29,10 @@ function startHealthServer() {
         `executor_polls_total ${pollCount}`,
         "# TYPE executor_jobs_started_total counter",
         `executor_jobs_started_total ${jobsStarted}`,
+        "# TYPE executor_price_triggers_crossed_total counter",
+        `executor_price_triggers_crossed_total ${priceTriggersCrossed}`,
+        "# TYPE executor_price_trigger_jobs_enqueued_total counter",
+        `executor_price_trigger_jobs_enqueued_total ${priceTriggerJobsEnqueued}`,
         "",
       ].join("\n"), { headers: { "content-type": "text/plain; version=0.0.4" } });
       return new Response("Not found", { status: 404 });
@@ -57,7 +64,7 @@ async function enqueueTimerJobs(now: number) {
     if (trigger.type === "price-trigger") {
       const feed = priceFeed();
       const metadata = trigger.data?.metadata ?? {};
-      if (!feed || typeof metadata.asset !== "string" || typeof metadata.price !== "number") continue;
+      if (!feed || typeof metadata.asset !== "string" || !SUPPORTED_ASSETS.includes(metadata.asset) || typeof metadata.price !== "number") continue;
       try {
         const quote = freshPrice(await feed.getPrice(metadata.asset), now, Number(process.env.PRICE_FEED_MAX_AGE_MS ?? 30_000));
         if (!quote) continue;
@@ -66,7 +73,9 @@ async function enqueueTimerJobs(now: number) {
         const previous = workflow.priceState?.[trigger.id];
         await WorkflowModel.updateOne({ _id: workflow._id }, { $set: { [`priceState.${trigger.id}`]: current } });
         if (previous === undefined || !crossedThreshold(previous, current, metadata.price, metadata.direction as PriceDirection | undefined)) continue;
+        priceTriggersCrossed += 1;
         await ExecutionModel.create({ workflowId: workflow._id, kind: "price", status: "pending", queueKey: `${key}:${Math.floor(quote.timestamp / PRICE_EVENT_BUCKET_MS)}` });
+        priceTriggerJobsEnqueued += 1;
       } catch (error) {
         if ((error as { code?: number })?.code !== 11000) console.error("[executor] price trigger enqueue failed", error);
       }
