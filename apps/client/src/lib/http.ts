@@ -122,6 +122,15 @@ export async function apiUpdateWorkflow(workflowId: string, body: { name?: strin
   return res.data;
 }
 
+export async function apiDuplicateWorkflow(workflowId: string): Promise<IdResponse> {
+  const res = await api.post<IdResponse>(`/workflow/${workflowId}/duplicate`);
+  return res.data;
+}
+
+export async function apiDeleteWorkflow(workflowId: string): Promise<void> {
+  await api.delete(`/workflow/${workflowId}`);
+}
+
 export async function apiExecuteWorkflow(workflowId: string): Promise<{ message: string }> {
   const res = await api.post<{ message: string }>(`/workflow/${workflowId}/execute`);
   return res.data;
@@ -142,6 +151,15 @@ export type PaginatedExecutions = { items: WorkflowExecution[]; page: number; pa
 
 export async function apiListExecutions(workflowId: string, page = 1, pageSize = 25): Promise<PaginatedExecutions> {
   const res = await api.get<PaginatedExecutions>(`/workflow/executions/${workflowId}`, { params: { page, pageSize } });
+  return res.data;
+}
+
+export async function apiCancelExecution(executionId: string): Promise<void> {
+  await api.post(`/workflow/executions/${executionId}/cancel`);
+}
+
+export async function apiRetryExecution(executionId: string): Promise<IdResponse> {
+  const res = await api.post<IdResponse>(`/workflow/executions/${executionId}/retry`);
   return res.data;
 }
 

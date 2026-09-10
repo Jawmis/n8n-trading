@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { apiListExecutions, type WorkflowExecution } from '@/lib/http';
+import { apiCancelExecution, apiListExecutions, apiRetryExecution, type WorkflowExecution } from '@/lib/http';
 
 
 export default function WorkflowExecutions() {
@@ -8,6 +8,13 @@ export default function WorkflowExecutions() {
   const [executions, setExecutions] = useState<WorkflowExecution[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  async function refresh() {
+    if (!workflowId) return;
+    const result = await apiListExecutions(workflowId);
+    setExecutions(result.items);
+  }
 
   useEffect(() => {
     if (!workflowId) return;
@@ -37,10 +44,15 @@ export default function WorkflowExecutions() {
           {executions.map((exec, i) => (
             <pre key={exec.id ?? i} className="border rounded-md p-4 text-xs overflow-auto">
               {JSON.stringify(exec, null, 2)}
+              <span className="mt-3 flex gap-2 text-sm">
+                {(exec.status === 'pending' || exec.status === 'running') && <button className="rounded-md border px-2 py-1" onClick={async () => { try { setActionError(null); await apiCancelExecution(exec._id ?? exec.id ?? ''); await refresh(); } catch { setActionError('Could not cancel execution.'); } }}>Cancel</button>}
+                {exec.status === 'failure' && <button className="rounded-md border px-2 py-1" onClick={async () => { try { setActionError(null); await apiRetryExecution(exec._id ?? exec.id ?? ''); await refresh(); } catch { setActionError('Could not retry execution.'); } }}>Retry</button>}
+              </span>
             </pre>
           ))}
         </div>
       )}
+      {actionError && <p className="mt-3 text-sm text-red-600">{actionError}</p>}
     </div>
   );
 }

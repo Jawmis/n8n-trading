@@ -303,6 +303,42 @@ app.get("/workflow/:workflowId", authMiddleware, async (req, res) => {
     res.json({ ...value, nodes: value.nodes.map(({ credentials: _credentials, ...node }) => node) });
 });
 
+app.post("/workflow/:workflowId/duplicate", authMiddleware, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.workflowId)) {
+        res.status(404).json({ message: "Workflow not found" });
+        return;
+    }
+    const source = await WorkflowModel.findOne({ _id: req.params.workflowId, userId: req.userId });
+    if (!source) {
+        res.status(404).json({ message: "Workflow not found" });
+        return;
+    }
+    const value = source.toObject();
+    const duplicate = await WorkflowModel.create({
+        userId: req.userId,
+        name: `${value.name} copy`.slice(0, 100),
+        enabled: false,
+        nodes: value.nodes,
+        edges: value.edges,
+        priceState: {},
+    });
+    res.status(201).json({ id: duplicate._id });
+});
+
+app.delete("/workflow/:workflowId", authMiddleware, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.workflowId)) {
+        res.status(404).json({ message: "Workflow not found" });
+        return;
+    }
+    const deleted = await WorkflowModel.findOneAndDelete({ _id: req.params.workflowId, userId: req.userId });
+    if (!deleted) {
+        res.status(404).json({ message: "Workflow not found" });
+        return;
+    }
+    await ExecutionModel.deleteMany({ workflowId: deleted._id });
+    res.status(204).send();
+});
+
 app.post("/credentials", authMiddleware, async (req, res) => {
     const parsed = CredentialPayloadSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -450,6 +486,46 @@ app.get("/workflow/executions/:workflowId",authMiddleware, async(req, res) => {
         ExecutionModel.countDocuments({ workflowId: workflow._id }),
     ]);
     res.json({ items: executions, page, pageSize, total, totalPages: Math.ceil(total / pageSize) });
+});
+
+app.post("/workflow/executions/:executionId/cancel", authMiddleware, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.executionId)) {
+        res.status(404).json({ message: "Execution not found" });
+        return;
+    }
+    const execution = await ExecutionModel.findById(req.params.executionId);
+    if (!execution || !(await WorkflowModel.exists({ _id: execution.workflowId, userId: req.userId }))) {
+        res.status(404).json({ message: "Execution not found" });
+        return;
+    }
+    const updated = await ExecutionModel.findOneAndUpdate(
+        { _id: execution._id, status: { $in: ["pending", "running"] } },
+        { $set: { status: "failure", endTime: new Date(), error: "Cancelled by user", leaseUntil: null }, $unset: { queueKey: 1 } },
+        { new: true },
+    );
+    if (!updated) {
+        res.status(409).json({ message: "Execution is already complete" });
+        return;
+    }
+    res.json({ id: updated._id, status: updated.status });
+});
+
+app.post("/workflow/executions/:executionId/retry", authMiddleware, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.executionId)) {
+        res.status(404).json({ message: "Execution not found" });
+        return;
+    }
+    const execution = await ExecutionModel.findById(req.params.executionId);
+    if (!execution || !(await WorkflowModel.exists({ _id: execution.workflowId, userId: req.userId }))) {
+        res.status(404).json({ message: "Execution not found" });
+        return;
+    }
+    if (execution.status !== "failure") {
+        res.status(409).json({ message: "Only failed executions can be retried" });
+        return;
+    }
+    const retry = await ExecutionModel.create({ workflowId: execution.workflowId, kind: execution.kind, status: "pending", queueKey: `${execution.workflowId}:retry:${randomUUID()}` });
+    res.status(202).json({ id: retry._id, status: retry.status });
 });
 
 app.get("/nodes", async (req, res) => {

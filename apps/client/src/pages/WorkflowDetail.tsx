@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ReactFlow,
   addEdge,
@@ -11,7 +11,7 @@ import {
   type NodeChange,
   type EdgeChange,
 } from '@xyflow/react';
-import { apiExecuteWorkflow, apiGetWorkflow, apiUpdateWorkflow, type Workflow } from '@/lib/http';
+import { apiDeleteWorkflow, apiDuplicateWorkflow, apiExecuteWorkflow, apiGetWorkflow, apiUpdateWorkflow, type Workflow } from '@/lib/http';
 import { TriggerSheet } from '@/component/TriggerSheet';
 import { ActionSheet } from '@/component/ActionSheet';
 import { Timer } from '@/nodes/triggers/Timer';
@@ -30,6 +30,7 @@ const nodeTypes = {
 
 export default function WorkflowDetail() {
   const { workflowId } = useParams<{ workflowId: string }>();
+  const navigate = useNavigate();
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [nodes, setNodes] = useState<EditorWorkflowNode[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -219,6 +220,12 @@ export default function WorkflowDetail() {
           >
             Executions
           </Link>
+          <button onClick={async () => { if (!workflowId || !window.confirm('Duplicate this workflow?')) return; try { const duplicate = await apiDuplicateWorkflow(workflowId); navigate(`/workflow/${duplicate.id}`); } catch { setSaveError('Could not duplicate workflow.'); } }} className="px-4 py-2 rounded-md border">
+            Duplicate
+          </button>
+          <button onClick={async () => { if (!workflowId || !window.confirm('Delete this workflow and its execution history?')) return; try { await apiDeleteWorkflow(workflowId); navigate('/dashboard'); } catch { setSaveError('Could not delete workflow.'); } }} className="px-4 py-2 rounded-md border text-red-600">
+            Delete
+          </button>
           <button
             onClick={handleSave}
             disabled={saving}
