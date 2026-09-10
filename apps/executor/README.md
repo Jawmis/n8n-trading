@@ -26,8 +26,11 @@ remains available for deterministic tests and paper-mode integrations.
 Trading defaults to paper mode. Live trading additionally requires
 `TRADING_MODE=live` and `LIVE_TRADING_ENABLED=true`. Configure
 `TRADING_KILL_SWITCH`, `ALLOWED_TRADING_ASSETS`, `MAX_ORDER_QUANTITY`, and
-`MAX_ORDER_NOTIONAL`, `MAX_ORDER_LEVERAGE`, and `MAX_ORDER_SLIPPAGE_BPS` before
-enabling live orders; missing or invalid limits fail closed. Live orders also
+`MAX_ORDER_NOTIONAL`, `MAX_ORDER_LEVERAGE`, `MAX_ORDER_SLIPPAGE_BPS`, and,
+when exposure caps are required, `MAX_POSITION_NOTIONAL` before enabling live
+orders; missing or invalid limits fail closed. When `MAX_POSITION_NOTIONAL` is
+set, the adapter reads the signed account position and rejects the order if the
+projected absolute exposure exceeds the cap. Live orders also
 require `TRADING_MODE=live`, `LIVE_TRADING_ENABLED=true`, and a credential
 private key.
 
