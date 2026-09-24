@@ -18,9 +18,21 @@ stack to verify signup, publication, scheduling, and a persisted paper trade.
 The smoke test creates and removes a workflow; its test account remains in the
 disposable database.
 
-Before upgrading an existing installation, take and verify a backup. Run
+Before upgrading an existing installation, stop the API and executor, take a
+backup, and verify that it can be restored. Run
 `MONGO_URL=... bun apps/backend/migrate-private-mvp.ts` for dry-run counts, then
 `MIGRATION_BACKUP_CONFIRMED=yes MONGO_URL=... bun apps/backend/migrate-private-mvp.ts --apply`.
-This pauses legacy workflows and fails legacy in-flight jobs for manual review;
-owners must review and publish a new version before re-enabling. Do not run the
-migration against an unbacked-up database.
+The apply step pauses every legacy workflow as an unpublished draft, removes
+legacy published snapshots and inline node credentials, and fails pending or
+running jobs for manual review. Dry-run output separates invalid graphs and
+credential references that are missing, revoked, owned by another user, or still
+embedded inline. Owners
+must inspect each draft, select their own active credential where needed, and
+publish a new version before enabling it.
+
+Upgrade the API and executor together after migration. Do not run the old API
+or executor against the migrated database. To roll back after applying the
+migration, stop both services, restore the verified pre-migration backup, and
+then deploy the matching previous API and executor versions. The migration is
+idempotent, but restoring the backup is the supported rollback because the
+migration deliberately removes inline secrets and holds ambiguous jobs.
