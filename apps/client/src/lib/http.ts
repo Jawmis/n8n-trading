@@ -3,6 +3,8 @@ import axios from "axios";
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 const TOKEN_KEY = "auth_token";
 
+if (typeof localStorage !== "undefined") localStorage.removeItem(TOKEN_KEY);
+
 // Return types
 export type IdResponse = { id: string };
 export type SigninResponse = { id: string; token: string };

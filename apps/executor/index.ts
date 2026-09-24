@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { ExecutionModel, WorkflowModel } from "db/client";
+import { ExecutionModel, RequestLimitModel, RuntimeControlModel, WorkflowModel } from "db/client";
 import { executeWorkflow, type WorkflowLike } from "./execute";
 import { crossedThreshold, freshPrice, type PriceDirection, type PriceQuote } from "./price";
 import { SUPPORTED_ASSETS } from "common/types";
@@ -169,6 +169,7 @@ export async function startPolling() {
   const mongoUrl = process.env.MONGO_URL;
   if (!mongoUrl) throw new Error("MONGO_URL is required");
   await mongoose.connect(mongoUrl);
+  await Promise.all([RequestLimitModel.init(), RuntimeControlModel.init()]);
   console.log("[executor] connected to MongoDB");
   startHealthServer();
   const stop = () => { stopping = true; };
