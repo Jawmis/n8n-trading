@@ -27,12 +27,13 @@ export default function WorkflowExecutions() {
     if (!workflowId) return;
     let active = true;
     apiListExecutions(workflowId, page, 25, statusFilter || undefined)
-      .then((result) => { if (active) { setExecutions(result.items); setTotalPages(result.totalPages); } })
+      .then((result) => { if (active) { setExecutions(result.items); setTotalPages(result.totalPages); setError(null); } })
       .catch((error) => { if (active) setError(apiError(error, 'Could not load execution history. Please try again.')); })
       .finally(() => { if (active) setLoading(false); });
     apiListWorkflowAudit(workflowId).then((events) => { if (active) setAudit(events); }).catch(() => undefined);
     apiGetWorkflow(workflowId).then((workflow) => { if (active) setIsOwner(workflow.role === 'owner'); }).catch(() => undefined);
-    return () => { active = false; };
+    const refreshTimer = window.setInterval(() => setRefreshKey((key) => key + 1), 5_000);
+    return () => { active = false; window.clearInterval(refreshTimer); };
   }, [workflowId, page, statusFilter, refreshKey]);
 
   function duration(execution: WorkflowExecution) {
