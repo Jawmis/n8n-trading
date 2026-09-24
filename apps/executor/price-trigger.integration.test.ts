@@ -8,6 +8,7 @@ const workflow = {
   priceState: {} as Record<string, number>,
   nodes: [{ id: "trigger", type: "price-trigger", data: { kind: "TRIGGER", metadata: { asset: "BTC", price: 100, direction: "ABOVE" } } }],
   edges: [],
+  published: undefined as unknown,
 };
 
 const originals = {
@@ -20,6 +21,7 @@ const originals = {
 
 beforeEach(() => {
   workflow.priceState = {};
+  workflow.published = { _id: workflow._id, revision: 0, nodes: workflow.nodes, edges: workflow.edges };
   process.env.PRICE_FEED_MAX_AGE_MS = "30000";
 });
 

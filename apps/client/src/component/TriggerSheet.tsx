@@ -31,10 +31,6 @@ const SUPPORTED_TRIGGERS = [{
     id: "timer",
     title: "Timer",
     description: "Run this trigger every x seconds/minutes."
-}, {
-    id: "price-trigger",
-    title: "Price Trigger",
-    description: "Runs whenever the price goes above or below a specific price level for an asset."
 }]
 
 
@@ -61,22 +57,21 @@ export const TriggerSheet = ({
             <SheetHeader>
                 <SheetTitle className="text-xl font-semibold">Select Trigger</SheetTitle>
                 <SheetDescription className="text-sm text-muted-foreground">
-                    Choose the trigger type and fill in the details below.
+                    Configure the timer in seconds. Price triggers are unavailable until a production market-data feed is configured.
                 </SheetDescription>
             </SheetHeader>
             <div className="mt-6 space-y-4">
                 <div className="space-y-2">
                     <div className="text-sm font-medium">Trigger Type</div>
-                    <Select value={selectedTrigger} onValueChange={(value) => setSelectedTrigger(value)}>
+                    <Select value={selectedTrigger} onValueChange={(value) => { setSelectedTrigger(value); setMetadata(value === 'timer' ? { time: 3600 } : {}); }}>
                         <SelectTrigger className="w-full">
                             <SelectValue placeholder="Trigger" />
                         </SelectTrigger>
                         <SelectContent>
                             <SelectGroup>
-                                {SUPPORTED_TRIGGERS.map(({ id, title }) => <>
+                                {SUPPORTED_TRIGGERS.map(({ id, title }) =>
                                     <SelectItem key={id} value={id}>{title}</SelectItem>
-                                    {/* <SelectLabel>{description}</SelectLabel> */}
-                                </>)}
+                                )}
                             </SelectGroup>
                         </SelectContent>
                     </Select>

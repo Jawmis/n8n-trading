@@ -11,6 +11,7 @@ import { hashPassword, verifyPassword } from './password';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { parsePagination } from './api-validation';
+import { workflowAccess, workflowRole, workflowSnapshot } from './workflow-access';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const MONGO_URL = process.env.MONGO_URL;
@@ -94,6 +95,11 @@ app.get("/metrics", (_req, res) => {
         `http_request_duration_ms_avg ${averageDuration}`,
         "",
     ].join("\n"));
+});
+app.get("/trading/status", authMiddleware, (_req, res) => {
+    const paper = process.env.TRADING_MODE !== "live";
+    const limitsReady = Number(process.env.MAX_ORDER_QUANTITY) > 0 && Number(process.env.MAX_ORDER_NOTIONAL) > 0;
+    res.json({ mode: paper ? "paper" : "live", priceSource: paper ? "fixed-demo-reference" : "broker", killSwitch: process.env.TRADING_KILL_SWITCH === "true", ready: limitsReady && process.env.TRADING_KILL_SWITCH !== "true" && (paper || process.env.LIVE_TRADING_ENABLED === "true") });
 });
 
 app.post("/signup", async (req, res) => {
@@ -218,25 +224,31 @@ app.put("/workflow/:workflowId", authMiddleware,async(req, res) => {
         })
         return
     }
-    const graph = validateWorkflowGraph(data);
+    const { revision, ...changes } = data;
+    const graph = validateWorkflowGraph(changes);
     if (!graph.success) {
         res.status(400).json({ message: graph.message });
         return;
     }
     try {
+        const existing = await WorkflowModel.findOne({ _id: req.params.workflowId, ...workflowAccess(req.userId, true) });
+        if (!existing) { res.status(404).json({ message: "Workflow not found" }); return; }
+        if (changes.enabled !== undefined && changes.enabled !== existing.enabled && workflowRole(existing, req.userId) !== "owner") {
+            res.status(403).json({ message: "Only the owner can enable or pause a workflow" }); return;
+        }
         const workflow = await WorkflowModel.findOneAndUpdate(
-            { _id: req.params.workflowId, userId: req.userId },
-            data,
-            { new: true }
+            { _id: existing._id, revision, ...workflowAccess(req.userId, true) },
+            { $set: { ...changes, state: "draft" }, $inc: { revision: 1 } },
+            { returnDocument: "after" }
         );
         if (!workflow) {
-            res.status(404).json({
-                message : "Workflow not found"
+            res.status(409).json({
+                message : "Workflow changed since it was loaded. Reload before saving."
             })
             return
         }
         res.json({
-            id : workflow._id
+            id : workflow._id, revision: workflow.revision, state: workflow.state
         })
         await recordWorkflowAudit(req.userId, workflow._id, "workflow.updated", { enabled: workflow.enabled });
     } catch (e) {
@@ -262,9 +274,10 @@ app.post("/workflow/:workflowId/execute", authMiddleware, async (req, res) => {
             res.status(409).json({ message: "Workflow is disabled" });
             return;
         }
-        const stored = workflow.toObject();
+        if (!workflow.published) { res.status(409).json({ message: "Publish a workflow version before running" }); return; }
+        const stored = workflow.published;
         const graph = validateWorkflowGraph({
-            nodes: stored.nodes.map(({ credentials: _credentials, ...node }) => node),
+            nodes: stored.nodes,
             edges: stored.edges,
         });
         if (!graph.success) {
@@ -276,6 +289,9 @@ app.post("/workflow/:workflowId/execute", authMiddleware, async (req, res) => {
             kind: "manual",
             status: "pending",
             queueKey: `${workflow._id}:manual`,
+            activeKey: workflow._id.toString(),
+            snapshot: stored,
+            workflowRevision: stored.revision,
         });
         await recordWorkflowAudit(req.userId, workflow._id, "execution.queued", { kind: "manual" });
         res.json({ message: "Workflow queued for execution" });
@@ -289,12 +305,10 @@ app.post("/workflow/:workflowId/execute", authMiddleware, async (req, res) => {
 });
 
 app.get("/workflows", authMiddleware, async (req, res) => {
-    const workflows = await WorkflowModel.find({
-        userId: req.userId
-    });
+    const workflows = await WorkflowModel.find(workflowAccess(req.userId));
     res.json(workflows.map((workflow) => {
         const value = workflow.toObject();
-        return { ...value, nodes: value.nodes.map(({ credentials: _credentials, ...node }) => node) };
+        return { ...value, role: workflowRole(workflow, req.userId), nodes: value.nodes.map(({ credentials: _credentials, ...node }) => node) };
     }));
 });
 
@@ -304,15 +318,68 @@ app.get("/workflow/:workflowId", authMiddleware, async (req, res) => {
         return;
     }
     //to : make sure the workflow belongs to the user
-    const workflow = await WorkflowModel.findById(req.params.workflowId);
-    if (!workflow || workflow.userId.toString() !== req.userId) {
+    const workflow = await WorkflowModel.findOne({ _id: req.params.workflowId, ...workflowAccess(req.userId) });
+    if (!workflow) {
         res.status(404).json({
             message: "Workflow not found"
         })
         return
     }
     const value = workflow.toObject();
-    res.json({ ...value, nodes: value.nodes.map(({ credentials: _credentials, ...node }) => node) });
+    res.json({ ...value, role: workflowRole(workflow, req.userId), nodes: value.nodes.map(({ credentials: _credentials, ...node }) => node) });
+});
+
+app.post("/workflow/:workflowId/publish", authMiddleware, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.workflowId)) { res.status(404).json({ message: "Workflow not found" }); return; }
+    const workflow = await WorkflowModel.findOne({ _id: req.params.workflowId, userId: req.userId });
+    if (!workflow) { res.status(404).json({ message: "Workflow not found" }); return; }
+    if (req.body.revision !== workflow.revision) { res.status(409).json({ message: "Workflow changed. Reload before publishing." }); return; }
+    const stored = workflow.toObject();
+    const graph = validateWorkflowGraph({
+        nodes: stored.nodes.map(({ credentials: _credentials, credentialId, ...node }) => ({ ...node, ...(credentialId ? { credentialId: credentialId.toString() } : {}) })),
+        edges: stored.edges,
+    });
+    if (!graph.success) { res.status(400).json({ message: graph.message }); return; }
+    if (graph.data.nodes.some((node) => node.type === "price-trigger")) { res.status(409).json({ message: "Price triggers require a production market-data feed and are not available in this release" }); return; }
+    for (const node of process.env.TRADING_MODE === "live" ? graph.data.nodes.filter((node) => node.data.kind === "ACTION") : []) {
+        if (!node.credentialId || !mongoose.isValidObjectId(node.credentialId) || !await CredentialModel.exists({ _id: node.credentialId, userId: req.userId, revokedAt: null })) {
+            res.status(400).json({ message: `Choose an active owner credential for node ${node.id}` }); return;
+        }
+    }
+    const published = workflowSnapshot({ ...workflow.toObject(), nodes: graph.data.nodes, edges: graph.data.edges });
+    const updated = await WorkflowModel.findOneAndUpdate({ _id: workflow._id, userId: req.userId, revision: workflow.revision }, { $set: { published, state: "published", priceState: {} }, $inc: { revision: 1 } }, { returnDocument: "after" });
+    if (!updated) { res.status(409).json({ message: "Workflow changed. Reload before publishing." }); return; }
+    await recordWorkflowAudit(req.userId, workflow._id, "workflow.published", { revision: published.revision });
+    res.json({ id: updated._id, revision: updated.revision, state: updated.state, published });
+});
+
+app.put("/workflow/:workflowId/enabled", authMiddleware, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.workflowId)) { res.status(404).json({ message: "Workflow not found" }); return; }
+    const parsed = z.object({ revision: z.number().int().nonnegative(), enabled: z.boolean() }).strict().safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ message: "Invalid workflow status" }); return; }
+    const existing = await WorkflowModel.findOne({ _id: req.params.workflowId, userId: req.userId });
+    if (!existing) { res.status(404).json({ message: "Workflow not found" }); return; }
+    if (parsed.data.enabled && !existing.published) { res.status(409).json({ message: "Publish a version before enabling" }); return; }
+    const workflow = await WorkflowModel.findOneAndUpdate({ _id: existing._id, userId: req.userId, revision: parsed.data.revision }, { $set: { enabled: parsed.data.enabled }, $inc: { revision: 1 } }, { returnDocument: "after" });
+    if (!workflow) { res.status(409).json({ message: "Workflow changed. Reload before changing status." }); return; }
+    await recordWorkflowAudit(req.userId, workflow._id, workflow.enabled ? "workflow.enabled" : "workflow.paused");
+    res.json({ revision: workflow.revision, enabled: workflow.enabled });
+});
+
+app.put("/workflow/:workflowId/members", authMiddleware, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.workflowId)) { res.status(404).json({ message: "Workflow not found" }); return; }
+    const parsed = z.object({ username: z.string().min(3).max(50), role: z.enum(["editor", "viewer", "remove"]) }).strict().safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ message: "Invalid member" }); return; }
+    const workflow = await WorkflowModel.findOne({ _id: req.params.workflowId, userId: req.userId });
+    if (!workflow) { res.status(404).json({ message: "Workflow not found" }); return; }
+    const user = await UserModel.findOne({ username: parsed.data.username });
+    if (!user || user._id.toString() === req.userId) { res.status(400).json({ message: "Choose another existing user" }); return; }
+    const members = workflow.members.filter((member) => member.userId.toString() !== user._id.toString()).map((member) => ({ userId: member.userId, role: member.role }));
+    if (parsed.data.role !== "remove") members.push({ userId: user._id, role: parsed.data.role });
+    const updated = await WorkflowModel.findOneAndUpdate({ _id: workflow._id, userId: req.userId, revision: workflow.revision }, { $set: { members }, $inc: { revision: 1 } }, { returnDocument: "after" });
+    if (!updated) { res.status(409).json({ message: "Workflow changed. Retry sharing." }); return; }
+    await recordWorkflowAudit(req.userId, workflow._id, "workflow.sharing_changed", { memberId: user._id.toString(), role: parsed.data.role });
+    res.json({ revision: updated.revision, members: updated.members });
 });
 
 app.post("/workflow/:workflowId/duplicate", authMiddleware, async (req, res) => {
@@ -349,7 +416,7 @@ app.delete("/workflow/:workflowId", authMiddleware, async (req, res) => {
         return;
     }
     await recordWorkflowAudit(req.userId, deleted._id, "workflow.deleted", { name: deleted.name });
-    await ExecutionModel.deleteMany({ workflowId: deleted._id });
+    await ExecutionModel.updateMany({ workflowId: deleted._id, status: { $in: ["pending", "running"] } }, { $set: { status: "cancelled", endTime: new Date(), error: "Workflow deleted" }, $unset: { queueKey: 1, activeKey: 1 } });
     res.status(204).send();
 });
 
@@ -393,7 +460,7 @@ app.put("/credentials/:credentialId", authMiddleware, async (req, res) => {
         const credential = await CredentialModel.findOneAndUpdate(
             { _id: req.params.credentialId, userId: req.userId },
             { provider: parsed.data.provider, ...encrypted },
-            { new: true },
+            { returnDocument: "after" },
         );
         if (!credential) {
             res.status(404).json({ message: "Credential not found" });
@@ -451,7 +518,7 @@ app.post("/credentials/:credentialId/revoke", authMiddleware, async (req, res) =
     const credential = await CredentialModel.findOneAndUpdate(
         { _id: req.params.credentialId, userId: req.userId },
         { $set: { revokedAt: new Date() } },
-        { new: true },
+        { returnDocument: "after" },
     ).select("_id revokedAt");
     if (!credential) {
         res.status(404).json({ message: "Credential not found" });
@@ -480,7 +547,7 @@ app.get("/workflow/executions/:workflowId",authMiddleware, async(req, res) => {
     }
     const workflow = await WorkflowModel.findOne({
         _id: req.params.workflowId,
-        userId: req.userId,
+        ...workflowAccess(req.userId),
     });
     if (!workflow) {
         res.status(404).json({ message: "Workflow not found" });
@@ -493,7 +560,7 @@ app.get("/workflow/executions/:workflowId",authMiddleware, async(req, res) => {
     }
     const { page, pageSize } = pagination;
     const requestedStatus = typeof req.query.status === "string" ? req.query.status : undefined;
-    const statuses = ["pending", "running", "success", "failure"] as const;
+    const statuses = ["pending", "running", "success", "failure", "cancelled"] as const;
     if (requestedStatus && !statuses.includes(requestedStatus as typeof statuses[number])) {
         res.status(400).json({ message: "Invalid execution status" });
         return;
@@ -517,7 +584,7 @@ app.get("/workflow/:workflowId/audit", authMiddleware, async (req, res) => {
         res.status(404).json({ message: "Workflow not found" });
         return;
     }
-    const owned = await WorkflowModel.exists({ _id: req.params.workflowId, userId: req.userId });
+    const owned = await WorkflowModel.exists({ _id: req.params.workflowId, ...workflowAccess(req.userId) });
     if (!owned) {
         res.status(404).json({ message: "Workflow not found" });
         return;
@@ -538,8 +605,8 @@ app.post("/workflow/executions/:executionId/cancel", authMiddleware, async (req,
     }
     const updated = await ExecutionModel.findOneAndUpdate(
         { _id: execution._id, status: { $in: ["pending", "running"] } },
-        { $set: { status: "failure", endTime: new Date(), error: "Cancelled by user", leaseUntil: null }, $unset: { queueKey: 1 } },
-        { new: true },
+        { $set: { status: "cancelled", endTime: new Date(), error: "Cancelled by user", leaseUntil: null }, $unset: { queueKey: 1, activeKey: 1 } },
+        { returnDocument: "after" },
     );
     if (!updated) {
         res.status(409).json({ message: "Execution is already complete" });
@@ -563,7 +630,10 @@ app.post("/workflow/executions/:executionId/retry", authMiddleware, async (req, 
         res.status(409).json({ message: "Only failed executions can be retried" });
         return;
     }
-    const retry = await ExecutionModel.create({ workflowId: execution.workflowId, kind: execution.kind, status: "pending", queueKey: `${execution.workflowId}:retry:${randomUUID()}` });
+    const workflow = await WorkflowModel.findOne({ _id: execution.workflowId, userId: req.userId, enabled: true });
+    if (!workflow || !execution.snapshot) { res.status(409).json({ message: "Retry requires an enabled workflow and a saved execution version" }); return; }
+    if (process.env.TRADING_MODE === "live") { res.status(409).json({ message: "Automatic retry is unavailable for live trading until broker orders are reconciled" }); return; }
+    const retry = await ExecutionModel.create({ workflowId: execution.workflowId, kind: execution.kind, status: "pending", queueKey: `${execution.workflowId}:manual`, activeKey: execution.workflowId.toString(), snapshot: execution.snapshot, workflowRevision: execution.workflowRevision });
     await recordWorkflowAudit(req.userId, execution.workflowId, "execution.retried", { executionId: execution._id.toString(), retryId: retry._id.toString() });
     res.status(202).json({ id: retry._id, status: retry.status });
 });
@@ -574,6 +644,7 @@ app.get("/nodes", async (req, res) => {
 })
 
 const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
+    if (error?.code === 11000) { res.status(409).json({ message: "An active execution or resource already exists" }); return; }
     if (error?.type === "entity.too.large") {
         res.status(413).json({ message: "Request body is too large" });
         return;

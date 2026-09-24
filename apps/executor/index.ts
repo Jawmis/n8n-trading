@@ -15,6 +15,7 @@ let pollCount = 0;
 let jobsStarted = 0;
 let priceTriggersCrossed = 0;
 let priceTriggerJobsEnqueued = 0;
+const activeJobs = new Set<Promise<unknown>>();
 
 function startHealthServer() {
   const port = Number(process.env.EXECUTOR_HEALTH_PORT ?? 3001);
@@ -57,8 +58,9 @@ export function timerIsDue(lastExecution: { startTime?: Date | string } | null, 
 
 async function enqueueTimerJobs(now: number) {
   const workflows = await WorkflowModel.find();
-  for (const workflow of workflows as unknown as WorkflowLike[]) {
-    if ((workflow as WorkflowLike & { enabled?: boolean }).enabled === false) continue;
+  for (const stored of workflows as unknown as WorkflowLike[]) {
+    if (!stored.enabled || !stored.published) continue;
+    const workflow = { ...stored.published, _id: stored._id, priceState: stored.priceState };
     const trigger = workflow.nodes.find((node) => String(node.data?.kind).toLowerCase() === "trigger");
     if (!trigger) continue;
     if (trigger.type === "price-trigger") {
@@ -74,7 +76,7 @@ async function enqueueTimerJobs(now: number) {
         await WorkflowModel.updateOne({ _id: workflow._id }, { $set: { [`priceState.${trigger.id}`]: current } });
         if (previous === undefined || !crossedThreshold(previous, current, metadata.price, metadata.direction as PriceDirection | undefined)) continue;
         priceTriggersCrossed += 1;
-        await ExecutionModel.create({ workflowId: workflow._id, kind: "price", status: "pending", queueKey: `${key}:${Math.floor(quote.timestamp / PRICE_EVENT_BUCKET_MS)}` });
+        await ExecutionModel.create({ workflowId: workflow._id, kind: "price", status: "pending", activeKey: String(workflow._id), snapshot: stored.published, workflowRevision: stored.published.revision, queueKey: `${key}:${Math.floor(quote.timestamp / PRICE_EVENT_BUCKET_MS)}` });
         priceTriggerJobsEnqueued += 1;
       } catch (error) {
         if ((error as { code?: number })?.code !== 11000) console.error("[executor] price trigger enqueue failed", error);
@@ -90,6 +92,9 @@ async function enqueueTimerJobs(now: number) {
         workflowId: workflow._id,
         kind: "timer",
         status: "pending",
+        activeKey: String(workflow._id),
+        snapshot: stored.published,
+        workflowRevision: stored.published.revision,
         queueKey: `${workflow._id}:timer:${slot}`,
       });
     } catch (error) {
@@ -103,37 +108,38 @@ async function claimAndStartJob(now: number): Promise<boolean> {
     {
       status: "running",
       leaseUntil: { $lte: new Date(now) },
-      attempt: { $gte: MAX_JOB_ATTEMPTS },
     },
     {
       $set: {
         status: "failure",
         endTime: new Date(now),
-        error: `Maximum execution attempts (${MAX_JOB_ATTEMPTS}) exceeded`,
+        error: "Worker lease expired. Reconcile broker orders before retrying.",
         leaseUntil: null,
       },
+      $unset: { queueKey: 1, activeKey: 1 },
     },
   );
   const job = await ExecutionModel.findOneAndUpdate(
     {
       $or: [
         { status: "pending", $or: [{ attempt: { $lt: MAX_JOB_ATTEMPTS } }, { attempt: { $exists: false } }] },
-        { status: "running", leaseUntil: { $lte: new Date(now) }, attempt: { $lt: MAX_JOB_ATTEMPTS } },
       ],
     },
     {
       $set: { status: "running", claimedAt: new Date(now), leaseUntil: new Date(now + JOB_LEASE_MS) },
       $inc: { attempt: 1 },
     },
-    { new: true, sort: { startTime: 1 } },
+    { returnDocument: "after", sort: { startTime: 1 } },
   );
   if (!job) return false;
   const workflow = await WorkflowModel.findById(job.workflowId);
-  if (!workflow) {
-    await ExecutionModel.updateOne({ _id: job._id }, { $set: { status: "failure", endTime: new Date(now), error: "Workflow not found", leaseUntil: null }, $unset: { queueKey: 1 } });
+  if (!workflow || !workflow.enabled || !job.snapshot) {
+    await ExecutionModel.updateOne({ _id: job._id }, { $set: { status: "failure", endTime: new Date(now), error: "Workflow disabled, deleted, or missing a published execution version", leaseUntil: null }, $unset: { queueKey: 1, activeKey: 1 } });
     return true;
   }
-  void executeWorkflow(workflow as unknown as WorkflowLike, job._id).catch((error) => console.error(`[executor] job ${job._id} failed`, error));
+  const task = executeWorkflow(job.snapshot as WorkflowLike, job._id).catch(() => console.error(`[executor] job ${job._id} failed`));
+  activeJobs.add(task);
+  void task.finally(() => activeJobs.delete(task));
   return true;
 }
 
@@ -141,7 +147,7 @@ export async function pollOnce(now = Date.now()): Promise<number> {
   pollCount += 1;
   await enqueueTimerJobs(now);
   let started = 0;
-  while (await claimAndStartJob(now)) started += 1;
+  while (!stopping && activeJobs.size < 10 && await claimAndStartJob(now)) started += 1;
   jobsStarted += started;
   return started;
 }
@@ -160,6 +166,7 @@ export async function startPolling() {
     if (!stopping) await sleep(POLL_INTERVAL_MS);
   }
   healthServer?.stop();
+  await Promise.allSettled([...activeJobs]);
   await mongoose.disconnect();
 }
 

@@ -51,8 +51,9 @@ export const ActionSheet = ({
     const [credentials, setCredentials] = useState<Credential[]>([]);
     const [selectedCredentialId, setSelectedCredentialId] = useState<string | undefined>(initialCredentialId);
     const [validationError, setValidationError] = useState<string | null>(null);
+    const [credentialError, setCredentialError] = useState(false);
     useEffect(() => {
-        apiListCredentials().then(setCredentials).catch(() => setCredentials([]));
+        apiListCredentials().then(setCredentials).catch(() => setCredentialError(true));
     }, []);
     return <Sheet open={true} onOpenChange={(open) => {
         if (!open) onClose?.();
@@ -84,7 +85,8 @@ export const ActionSheet = ({
                 </div>
                 {selectedAction === "lighter" && <div className="space-y-4 rounded-lg border border-border p-4">
                     <div className="space-y-2">
-                        <div className="text-sm font-medium">Credential</div>
+                        <div className="text-sm font-medium">Credential (optional in paper mode)</div>
+                        {credentialError && <p role="alert">Could not load credentials. <button onClick={() => { void apiListCredentials().then((items) => { setCredentials(items); setCredentialError(false); }).catch(() => setCredentialError(true)); }}>Retry</button></p>}
                         <Select value={selectedCredentialId} onValueChange={setSelectedCredentialId}>
                             <SelectTrigger className="w-full"><SelectValue placeholder="Select a broker credential" /></SelectTrigger>
                             <SelectContent><SelectGroup>{credentials.filter((credential) => credential.provider === selectedAction && !credential.revokedAt).map((credential) => <SelectItem key={credential._id} value={credential._id}>{credential.provider} · {credential._id.slice(-6)}</SelectItem>)}</SelectGroup></SelectContent>

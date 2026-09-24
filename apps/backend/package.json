@@ -4,10 +4,11 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "migrate:private-mvp": "bun migrate-private-mvp.ts",
     "start": "bun index.ts",
     "check-types": "tsc --noEmit",
     "test": "bun test",
-    "test:integration": "RUN_INTEGRATION_TESTS=1 bun test ./ownership.integration.ts"
+    "test:integration": "RUN_INTEGRATION_TESTS=1 bun test ./ownership.integration.ts && RUN_INTEGRATION_TESTS=1 bun test ./migrate-private-mvp.integration.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"

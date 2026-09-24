@@ -116,6 +116,10 @@ const EdgesSchema = new Schema({
 })
 
 const WorkflowSchema = new Schema({
+    revision: { type: Number, required: true, default: 0 },
+    state: { type: String, enum: ["draft", "published"], default: "draft", required: true },
+    published: { type: Schema.Types.Mixed },
+    members: [{ userId: { type: mongoose.Types.ObjectId, required: true, ref: "Users" }, role: { type: String, enum: ["editor", "viewer"], required: true }, _id: false }],
     name: { type: String, required: true, default: "Untitled workflow", maxlength: 100 },
     enabled: { type: Boolean, required: true, default: true },
     userId: {
@@ -172,6 +176,8 @@ const NodesSchema = new Schema({
 })
 
 const ExecutionSchema = new Schema({
+    snapshot: { type: Schema.Types.Mixed },
+    workflowRevision: { type: Number },
     workflowId: {
         type: mongoose.Types.ObjectId,
         required: true,
@@ -179,7 +185,7 @@ const ExecutionSchema = new Schema({
     },
     status: {
         type: String,
-        enum : ["pending", "running", "success", "failure"]
+        enum : ["pending", "running", "success", "failure", "cancelled"]
     },
     kind: {
         type: String,
@@ -210,6 +216,7 @@ const ExecutionSchema = new Schema({
         unique: true,
         sparse: true
     },
+    activeKey: { type: String },
     error: {
         type: String
     },
@@ -219,6 +226,7 @@ const ExecutionSchema = new Schema({
 })
 ExecutionSchema.index({ workflowId: 1, startTime: -1 });
 ExecutionSchema.index({ status: 1, leaseUntil: 1 });
+ExecutionSchema.index({ activeKey: 1 }, { unique: true, partialFilterExpression: { activeKey: { $type: "string" } } });
 
 export const UserModel = mongoose.model("Users", UserSchema);
 export const CredentialModel = mongoose.model("Credentials", CredentialSchema);

@@ -23,7 +23,11 @@ indices and precision from Lighter, signs orders with the SDK WASM signer, and
 requires a transaction hash before reporting success. `globalThis.LIGHTER_CLIENT`
 remains available for deterministic tests and paper-mode integrations.
 
-Trading defaults to paper mode. Live trading additionally requires
+Paper mode uses fixed demo prices (BTC 100000, ETH 3000, SOL 150). It requires
+no broker credential and never calls a broker API. The prices are illustrative,
+not live market data; simulated results are recorded in execution history.
+`deploy/docker-compose.yml` pins this mode for the private MVP. The separate
+live adapter additionally requires
 `TRADING_MODE=live` and `LIVE_TRADING_ENABLED=true`. Configure
 `TRADING_KILL_SWITCH`, `ALLOWED_TRADING_ASSETS`, `MAX_ORDER_QUANTITY`, and
 `MAX_ORDER_NOTIONAL`, `MAX_ORDER_LEVERAGE`, `MAX_ORDER_SLIPPAGE_BPS`, and,

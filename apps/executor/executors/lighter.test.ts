@@ -31,7 +31,7 @@ describe("Lighter action adapter", () => {
       placeOrder: async () => { throw new Error("paper mode must not submit"); },
     };
     const result = await executeLighter(node);
-    expect(result).toEqual({ mode: "paper", order: { asset: "BTC", quantity: 1, side: "long", price: 100.12, leverage: undefined, reduceOnly: true, apiKey: "[redacted]", accountIndex: 7, apiIndex: 2 } });
+    expect(result).toEqual({ mode: "paper", priceSource: "fixed-demo-reference", order: { asset: "BTC", quantity: 1, side: "long", referencePrice: 100_000, requestedPrice: undefined, leverage: undefined, reduceOnly: true } });
   });
 
   test("dispatches a live order with normalized precision and reduce-only intent", async () => {
@@ -57,6 +57,8 @@ describe("Lighter action adapter", () => {
   });
 
   test("rejects quantities and limit prices beyond broker precision", async () => {
+    process.env.TRADING_MODE = "live";
+    process.env.LIVE_TRADING_ENABLED = "true";
     (globalThis as typeof globalThis & { LIGHTER_CLIENT?: unknown }).LIGHTER_CLIENT = {
       getMarketPrice: async () => ({ price: 100, priceDecimals: 2, quantityDecimals: 3 }),
       placeOrder: async () => ({ transactionHash: "tx-1" }),

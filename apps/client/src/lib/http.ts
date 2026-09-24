@@ -24,6 +24,11 @@ export type WorkflowEdge = {
 };
 
 export type Workflow = {
+  revision: number;
+  state: "draft" | "published";
+  published?: { revision: number };
+  role: "owner" | "editor" | "viewer";
+  members: Array<{ userId: string; role: "editor" | "viewer" }>;
   _id: string;
   userId: string;
   name: string;
@@ -112,13 +117,13 @@ export async function apiRevokeCredential(credentialId: string): Promise<{ id: s
   return res.data;
 }
 
-export async function apiCreateWorkflow(body: { nodes: WorkflowNode[]; edges: WorkflowEdge[] }): Promise<IdResponse> {
+export async function apiCreateWorkflow(body: { name?: string; enabled?: boolean; nodes: WorkflowNode[]; edges: WorkflowEdge[] }): Promise<IdResponse> {
   const res = await api.post<IdResponse>("/workflow", body);
   return res.data;
 }
 
-export async function apiUpdateWorkflow(workflowId: string, body: { name?: string; enabled?: boolean; nodes: WorkflowNode[]; edges: WorkflowEdge[] }): Promise<IdResponse> {
-  const res = await api.put<IdResponse>(`/workflow/${workflowId}`, body);
+export async function apiUpdateWorkflow(workflowId: string, body: { revision: number; name?: string; enabled?: boolean; nodes: WorkflowNode[]; edges: WorkflowEdge[] }): Promise<IdResponse & { revision: number; state: "draft" }> {
+  const res = await api.put<IdResponse & { revision: number; state: "draft" }>(`/workflow/${workflowId}`, body);
   return res.data;
 }
 
@@ -146,8 +151,8 @@ export async function apiListWorkflows(): Promise<Workflow[]> {
   return res.data;
 }
 
-export type ExecutionStatus = "pending" | "running" | "success" | "failure";
-export type WorkflowExecution = { _id?: string; id?: string; status?: ExecutionStatus; startTime?: string; endTime?: string; error?: string; results?: Array<{ nodeId: string; result: unknown }> };
+export type ExecutionStatus = "pending" | "running" | "success" | "failure" | "cancelled";
+export type WorkflowExecution = { _id?: string; id?: string; workflowRevision?: number; status?: ExecutionStatus; startTime?: string; endTime?: string; error?: string; results?: Array<{ nodeId: string; result?: unknown; status?: string; error?: string }> };
 export type WorkflowAuditEvent = { _id: string; action: string; metadata?: Record<string, unknown>; createdAt: string };
 export type PaginatedExecutions = { items: WorkflowExecution[]; page: number; pageSize: number; total: number; totalPages: number };
 
@@ -172,5 +177,29 @@ export async function apiRetryExecution(executionId: string): Promise<IdResponse
 
 export async function apiListNodes(): Promise<unknown[]> {
   const res = await api.get<unknown[]>("/nodes");
+  return res.data;
+}
+export type TradingStatus = { mode: 'paper' | 'live'; priceSource: 'fixed-demo-reference' | 'broker'; killSwitch: boolean; ready: boolean };
+export async function apiTradingStatus(): Promise<TradingStatus> {
+  const res = await api.get<TradingStatus>('/trading/status');
+  return res.data;
+}
+
+export function apiError(error: unknown, fallback: string) {
+  return axios.isAxiosError(error) && typeof error.response?.data?.message === "string" ? error.response.data.message : fallback;
+}
+
+export async function apiPublishWorkflow(workflowId: string, revision: number) {
+  const res = await api.post<{ revision: number; state: "published"; published: { revision: number } }>(`/workflow/${workflowId}/publish`, { revision });
+  return res.data;
+}
+
+export async function apiShareWorkflow(workflowId: string, username: string, role: "viewer" | "editor" | "remove") {
+  const res = await api.put<{ revision: number; members: Workflow["members"] }>(`/workflow/${workflowId}/members`, { username, role });
+  return res.data;
+}
+
+export async function apiSetWorkflowEnabled(workflowId: string, revision: number, enabled: boolean) {
+  const res = await api.put<{ revision: number; enabled: boolean }>(`/workflow/${workflowId}/enabled`, { revision, enabled });
   return res.data;
 }

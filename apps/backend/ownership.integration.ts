@@ -1,7 +1,7 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
-import { ExecutionModel, UserModel, WorkflowModel } from "db/client";
+import { ExecutionModel, UserModel, WorkflowModel, WorkflowAuditModel } from "db/client";
 import { app } from "./index";
 import { JWT_AUDIENCE, JWT_ISSUER } from "./middleware";
 
@@ -40,6 +40,7 @@ describe("workflow ownership integration", () => {
     if (process.env.RUN_INTEGRATION_TESTS !== "1") return;
     if (!process.env.MONGO_URL) throw new Error("MONGO_URL is required for integration tests");
     await mongoose.connect(process.env.MONGO_URL);
+    await Promise.all([ExecutionModel.init(), UserModel.init()]);
     server = app.listen(0);
   });
 
@@ -65,20 +66,27 @@ describe("workflow ownership integration", () => {
     });
     workflowId = workflow._id;
     userBWorkflowId = userBWorkflow._id;
+    await request(`/workflow/${userBWorkflowId}/publish`, { method: "POST", body: JSON.stringify({ revision: 0 }) });
     await ExecutionModel.create({ workflowId, kind: "manual", status: "success" });
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     if (process.env.RUN_INTEGRATION_TESTS !== "1") return;
     await ExecutionModel.deleteMany({ workflowId: { $in: [workflowId, userBWorkflowId] } });
     await WorkflowModel.deleteMany({ _id: { $in: [workflowId, userBWorkflowId] } });
     await UserModel.deleteMany({ _id: { $in: [userA, userB] } });
+    await WorkflowAuditModel.deleteMany({ userId: { $in: [userA, userB] } });
+  });
+
+  afterAll(async () => {
+    if (process.env.RUN_INTEGRATION_TESTS !== "1") return;
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await mongoose.disconnect();
   });
 
   integrationTest("denies another user workflow reads, updates, runs, and history", async () => {
     const validWorkflow = {
+      revision: 1,
       nodes: [{ nodeId: "timer", type: "timer", id: "trigger", position: { x: 0, y: 0 }, data: { kind: "TRIGGER", metadata: { time: 60 } } }],
       edges: [],
     };
@@ -118,6 +126,11 @@ describe("workflow ownership integration", () => {
     expect(created.status).toBe(201);
     expect(createdBody).not.toContain("encrypted-api-key");
     const credentialId = JSON.parse(createdBody).id as string;
+    const editor = await request(`/workflow/${userBWorkflowId}`);
+    const saved = await editor.json() as { revision: number; nodes: Array<{ id: string }>; edges: unknown[] };
+    const action = { id: "trade", nodeId: "lighter", type: "lighter", position: { x: 200, y: 0 }, credentialId, data: { kind: "ACTION", metadata: { type: "LONG", symbol: "BTC", qty: 1 } } };
+    expect((await request(`/workflow/${userBWorkflowId}`, { method: "PUT", body: JSON.stringify({ revision: saved.revision, nodes: [...saved.nodes, action], edges: [{ id: "trigger-trade", source: saved.nodes[0]!.id, target: "trade" }] }) })).status).toBe(200);
+    expect((await request(`/workflow/${userBWorkflowId}/publish`, { method: "POST", body: JSON.stringify({ revision: saved.revision + 1 }) })).status).toBe(200);
 
     const rotated = await request(`/credentials/${credentialId}`, {
       method: "PUT",
@@ -171,6 +184,13 @@ describe("workflow ownership integration", () => {
     expect(await ExecutionModel.countDocuments({ workflowId: userBWorkflowId, status: "pending" })).toBe(1);
   });
 
+  integrationTest("rejects a manual run while a scheduled run owns the workflow", async () => {
+    const scheduled = await ExecutionModel.create({ workflowId: userBWorkflowId, kind: "timer", status: "pending", activeKey: userBWorkflowId.toString(), queueKey: `${userBWorkflowId}:timer:test` });
+    expect((await request(`/workflow/${userBWorkflowId}/execute`, { method: "POST" })).status).toBe(409);
+    await ExecutionModel.updateOne({ _id: scheduled._id }, { $set: { status: "success" }, $unset: { activeKey: 1, queueKey: 1 } });
+    expect((await request(`/workflow/${userBWorkflowId}/execute`, { method: "POST" })).status).toBe(200);
+  });
+
   integrationTest("allows only one concurrent worker claim for a durable job", async () => {
     const job = await ExecutionModel.create({
       workflowId: userBWorkflowId,
@@ -204,8 +224,50 @@ describe("workflow ownership integration", () => {
     expect(loadedBody.enabled).toBe(true);
     expect(loadedBody.nodes).toEqual(payload.nodes);
     expect(loadedBody.edges).toEqual(payload.edges);
+    expect((await request(`/workflow/${createdId}/publish`, { method: "POST", body: JSON.stringify({ revision: 0 }) })).status).toBe(200);
     expect((await request(`/workflow/${createdId}/execute`, { method: "POST" })).status).toBe(200);
     await ExecutionModel.deleteMany({ workflowId: createdId });
     await WorkflowModel.deleteOne({ _id: createdId });
+  });
+
+  integrationTest("rejects stale saves and keeps queued execution versions immutable", async () => {
+    expect((await request(`/workflow/${userBWorkflowId}/execute`, { method: "POST" })).status).toBe(200);
+    const before = await WorkflowModel.findById(userBWorkflowId).lean();
+    const payload = { revision: 1, name: "Edited draft", nodes: before!.nodes, edges: before!.edges };
+    expect((await request(`/workflow/${userBWorkflowId}`, { method: "PUT", body: JSON.stringify(payload) })).status).toBe(200);
+    expect((await request(`/workflow/${userBWorkflowId}`, { method: "PUT", body: JSON.stringify(payload) })).status).toBe(409);
+    const job = await ExecutionModel.findOne({ workflowId: userBWorkflowId, status: "pending" }).lean();
+    expect(job!.snapshot.revision).toBe(0);
+    expect(job!.snapshot.nodes).toEqual(before!.published.nodes);
+    expect((await WorkflowModel.findById(userBWorkflowId))!.state).toBe("draft");
+  });
+
+  integrationTest("enforces viewer, editor, and owner permissions", async () => {
+    const user = await UserModel.findById(userA);
+    const share = (role: string) => request(`/workflow/${userBWorkflowId}/members`, { method: "PUT", body: JSON.stringify({ username: user!.username, role }) });
+    expect((await share("viewer")).status).toBe(200);
+    const read = await request(`/workflow/${userBWorkflowId}`, {}, userA);
+    const value = await read.json() as { role: string; revision: number; nodes: unknown[]; edges: unknown[] };
+    expect(value.role).toBe("viewer");
+    const update = () => request(`/workflow/${userBWorkflowId}`, { method: "PUT", body: JSON.stringify({ revision: value.revision, nodes: value.nodes, edges: value.edges, name: "Shared draft" }) }, userA);
+    expect((await update()).status).toBe(404);
+    expect((await share("editor")).status).toBe(200);
+    value.revision += 1;
+    expect((await update()).status).toBe(200);
+    expect((await request(`/workflow/${userBWorkflowId}/publish`, { method: "POST", body: JSON.stringify({ revision: value.revision + 1 }) }, userA)).status).toBe(404);
+    expect((await request(`/workflow/${userBWorkflowId}/execute`, { method: "POST" }, userA)).status).toBe(404);
+    expect((await request(`/workflow/${userBWorkflowId}`, { method: "DELETE" }, userA)).status).toBe(404);
+    expect((await share("remove")).status).toBe(200);
+    expect((await request(`/workflow/${userBWorkflowId}`, {}, userA)).status).toBe(404);
+  });
+
+  integrationTest("cancels queued jobs and blocks runs of paused workflows", async () => {
+    await request(`/workflow/${userBWorkflowId}/execute`, { method: "POST" });
+    const job = await ExecutionModel.findOne({ workflowId: userBWorkflowId, status: "pending" });
+    expect((await request(`/workflow/executions/${job!._id}/cancel`, { method: "POST" })).status).toBe(200);
+    expect((await ExecutionModel.findById(job!._id))!.status).toBe("cancelled");
+    expect((await request(`/workflow/${userBWorkflowId}/enabled`, { method: "PUT", body: JSON.stringify({ revision: 1, enabled: false }) })).status).toBe(200);
+    expect((await request(`/workflow/${userBWorkflowId}/execute`, { method: "POST" })).status).toBe(409);
+    expect((await WorkflowAuditModel.find({ workflowId: userBWorkflowId })).map((event) => event.action)).toContain("execution.cancelled");
   });
 });

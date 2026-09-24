@@ -21,7 +21,7 @@ export const CreateWorkflowSchema = z.object({
     nodes: z.array(NodeSchema).max(100),
     edges: z.array(EdgeSchema).max(500),
 }).strict();
-export const UpdateWorkflowSchema = CreateWorkflowSchema;
+export const UpdateWorkflowSchema = CreateWorkflowSchema.extend({ revision: z.number().int().nonnegative() });
 const TimerMetadataSchema = z.object({ time: z.number().finite().positive() }).strict();
 const PriceTriggerMetadataSchema = z.object({ asset: z.enum(SUPPORTED_ASSETS), price: z.number().finite().positive(), decimals: z.number().int().nonnegative().optional() }).strict();
 const TradingMetadataSchema = z.object({ type: z.enum(["LONG", "SHORT"]), qty: z.number().finite().positive(), symbol: z.enum(SUPPORTED_ASSETS), leverage: z.number().finite().positive().optional(), price: z.number().finite().positive().optional(), reduceOnly: z.boolean().optional() }).strict();

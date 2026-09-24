@@ -26,9 +26,12 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run test
       - run: cd apps/backend && MONGO_URL=mongodb://127.0.0.1:27017/trading-ci JWT_SECRET=ci-test-secret CREDENTIAL_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= bun run test:integration
+      - run: cd apps/executor && MONGO_URL=mongodb://127.0.0.1:27017/trading-executor-ci CREDENTIAL_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= bun run test:integration
       - run: bun run lint
       - run: bun run check-types
       - run: bun run build --filter=client
+      - run: cd apps/client && bunx playwright install --with-deps chromium && bun run test:browser
+      - run: cd apps/client && MONGO_URL=mongodb://127.0.0.1:27017/trading-fullstack-ci bun run test:fullstack
 
   deployment-smoke:
     needs: validate
@@ -51,6 +54,7 @@ jobs:
           curl --fail --retry 30 --retry-all-errors --retry-delay 2 http://localhost:3000/readyz
           curl --fail --retry 30 --retry-all-errors --retry-delay 2 http://localhost:3001/readyz
           curl --fail --retry 30 --retry-all-errors --retry-delay 2 http://localhost/
+          bun deploy/smoke.ts
       - name: Show service logs on failure
         if: failure()
         run: docker compose -f deploy/docker-compose.yml logs --no-color

@@ -20,6 +20,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY is required}
       CLIENT_URL: ${CLIENT_URL:-http://localhost}
+      TRADING_MODE: paper
+      TRADING_KILL_SWITCH: ${TRADING_KILL_SWITCH:-false}
+      MAX_ORDER_QUANTITY: ${MAX_ORDER_QUANTITY:-10}
+      MAX_ORDER_NOTIONAL: ${MAX_ORDER_NOTIONAL:-1000000}
       PORT: 3000
     ports:
       - "3000:3000"
@@ -41,12 +45,12 @@ services:
       MONGO_URL: mongodb://mongo:27017/trading
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY is required}
       EXECUTOR_HEALTH_PORT: 3001
-      TRADING_MODE: ${TRADING_MODE:-paper}
-      LIVE_TRADING_ENABLED: ${LIVE_TRADING_ENABLED:-false}
-      TRADING_KILL_SWITCH: ${TRADING_KILL_SWITCH:-true}
+      TRADING_MODE: paper
+      LIVE_TRADING_ENABLED: "false"
+      TRADING_KILL_SWITCH: ${TRADING_KILL_SWITCH:-false}
       ALLOWED_TRADING_ASSETS: ${ALLOWED_TRADING_ASSETS:-SOL,BTC,ETH}
-      MAX_ORDER_QUANTITY: ${MAX_ORDER_QUANTITY:-0}
-      MAX_ORDER_NOTIONAL: ${MAX_ORDER_NOTIONAL:-0}
+      MAX_ORDER_QUANTITY: ${MAX_ORDER_QUANTITY:-10}
+      MAX_ORDER_NOTIONAL: ${MAX_ORDER_NOTIONAL:-1000000}
       MAX_ORDER_LEVERAGE: ${MAX_ORDER_LEVERAGE:-1}
       MAX_ORDER_SLIPPAGE_BPS: ${MAX_ORDER_SLIPPAGE_BPS:-0}
       MAX_POSITION_NOTIONAL: ${MAX_POSITION_NOTIONAL:-0}
@@ -74,7 +78,7 @@ services:
     ports:
       - "80:80"
     healthcheck:
-      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost/"]
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1/"]
       interval: 10s
       timeout: 5s
       retries: 5

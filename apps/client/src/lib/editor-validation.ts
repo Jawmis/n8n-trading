@@ -16,7 +16,7 @@ export function validateEditorNode(kind: NodeKind, metadata: NodeMetadata, crede
       : "Trigger price must be greater than zero.";
   }
 
-  if (!credentialId) return "Select a broker credential.";
+  void credentialId;
   if (fields.type !== "LONG" && fields.type !== "SHORT") return "Select LONG or SHORT.";
   if (!fields.symbol) return "Select a trading symbol.";
   if (typeof fields.qty !== "number" || !Number.isFinite(fields.qty) || fields.qty <= 0) {

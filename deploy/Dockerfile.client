@@ -4,6 +4,8 @@ ARG VITE_API_URL=http://localhost:3000
 ENV VITE_API_URL=$VITE_API_URL
 COPY package.json bun.lock turbo.json ./
 COPY apps/client/package.json apps/client/package.json
+COPY apps/backend/package.json apps/backend/package.json
+COPY apps/executor/package.json apps/executor/package.json
 COPY packages packages
 RUN bun install --frozen-lockfile
 COPY apps/client apps/client

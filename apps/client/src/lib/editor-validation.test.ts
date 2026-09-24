@@ -7,11 +7,10 @@ describe("workflow editor validation", () => {
     expect(validateEditorNode("timer", { time: 60 })).toBeNull();
   });
 
-  test("requires a positive trading quantity and credential", () => {
+  test("requires a positive trading quantity without requiring a paper credential", () => {
     const metadata = { type: "LONG" as const, symbol: "BTC" as const, qty: 0 };
-    expect(validateEditorNode("lighter", metadata)).toContain("credential");
-    expect(validateEditorNode("lighter", metadata, "credential-1")).toContain("Quantity");
-    expect(validateEditorNode("lighter", { ...metadata, qty: 1 }, "credential-1")).toBeNull();
+    expect(validateEditorNode("lighter", metadata)).toContain("Quantity");
+    expect(validateEditorNode("lighter", { ...metadata, qty: 1 })).toBeNull();
   });
 
   test("requires a positive price trigger price", () => {

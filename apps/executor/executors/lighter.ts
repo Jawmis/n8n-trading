@@ -1,5 +1,6 @@
 import type { WorkflowNodeLike } from "../execute";
 import { validateTradeRisk } from "../risk";
+import { paperReferencePrice } from "../paper";
 import { AccountApi, ApiClient, MarketHelper, OrderApi, SignerClient, resolveNetworkFromEnv } from "lighter-ts-sdk";
 const assets = new Set(["SOL", "BTC", "ETH"]);
 export interface LighterOrder { asset: "SOL" | "BTC" | "ETH"; quantity: number; side: "long" | "short"; price?: number; leverage?: number; reduceOnly?: boolean; apiKey: string; accountIndex: string | number; apiIndex: string | number; }
@@ -130,7 +131,7 @@ export function createLighterClient(credentials: Record<string, unknown>) {
   });
 }
 
-export function parseLighterOrder(node: WorkflowNodeLike): LighterOrder {
+export function parseLighterOrder(node: WorkflowNodeLike, requireCredentials = true): LighterOrder {
   const metadata = node.data?.metadata ?? {}, credentials = node.credentials ?? {};
   const asset = String(metadata.asset ?? metadata.symbol ?? "").toUpperCase();
   const quantity = Number(metadata.quantity ?? metadata.qty);
@@ -138,14 +139,22 @@ export function parseLighterOrder(node: WorkflowNodeLike): LighterOrder {
   if (!assets.has(asset)) throw new Error(`Unsupported Lighter asset: ${asset || "missing"}`);
   if (!Number.isFinite(quantity) || quantity <= 0) throw new Error("Lighter quantity must be greater than zero");
   if (!["long", "short", "ask", "bid"].includes(side)) throw new Error("Lighter order side must be long/short");
-  if (!credentials.apiKey || credentials.accountIndex === undefined || credentials.apiIndex === undefined) throw new Error("Lighter credentials require apiKey, accountIndex, and apiIndex");
+  if (requireCredentials && (!credentials.apiKey || credentials.accountIndex === undefined || credentials.apiIndex === undefined)) throw new Error("Lighter credentials require apiKey, accountIndex, and apiIndex");
   const leverage = metadata.leverage === undefined ? undefined : Number(metadata.leverage);
   if (leverage !== undefined && (!Number.isFinite(leverage) || leverage <= 0)) throw new Error("Lighter leverage must be greater than zero");
   return { asset: asset as LighterOrder["asset"], quantity, side: side === "bid" ? "long" : side === "ask" ? "short" : side as "long" | "short", price: metadata.price === undefined ? undefined : Number(metadata.price), leverage, reduceOnly: metadata.reduceOnly === true, apiKey: String(credentials.apiKey), accountIndex: credentials.accountIndex as string | number, apiIndex: credentials.apiIndex as string | number };
 }
 
-export async function executeLighter(node: WorkflowNodeLike, client?: LighterClient) {
-  const order = parseLighterOrder(node);
+export async function executeLighter(node: WorkflowNodeLike, client?: LighterClient, beforeSubmit: () => Promise<void> = async () => {}) {
+  const paper = process.env.TRADING_MODE !== "live";
+  const order = parseLighterOrder(node, !paper);
+  if (paper) {
+    const referencePrice = paperReferencePrice(order.asset);
+    const risk = validateTradeRisk({ ...order, price: order.price }, referencePrice);
+    await beforeSubmit();
+    if (risk.mode !== "paper") throw new Error("Paper mode changed during execution");
+    return { mode: "paper", priceSource: "fixed-demo-reference", order: { asset: order.asset, quantity: order.quantity, side: order.side, referencePrice, requestedPrice: order.price, leverage: order.leverage, reduceOnly: order.reduceOnly } };
+  }
   const exchange = client ?? (globalThis as typeof globalThis & { LIGHTER_CLIENT?: LighterClient }).LIGHTER_CLIENT ?? createLighterClient(node.credentials ?? {});
   if (!exchange) throw new Error("No Lighter client configured (inject one or set globalThis.LIGHTER_CLIENT)");
   const market = await exchange.getMarketPrice(order.asset);
@@ -163,6 +172,7 @@ export async function executeLighter(node: WorkflowNodeLike, client?: LighterCli
     ? await exchange.getPositionNotional(order.asset)
     : undefined;
   const risk = validateTradeRisk({ ...executableOrder, price: order.price }, market.price, currentPositionNotional);
-  if (risk.mode === "paper") return { mode: "paper", order: { ...executableOrder, apiKey: "[redacted]" } };
+  await beforeSubmit();
+  if (risk.mode !== "live") throw new Error("Live mode changed during execution");
   return exchange.placeOrder(executableOrder);
 }
