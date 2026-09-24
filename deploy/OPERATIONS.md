@@ -78,6 +78,33 @@ timeout. Compose allows the executor seven minutes to finish its current
 bounded request and shut down. An in-flight order with no confirmed response
 is held for operator reconciliation and is not submitted again automatically.
 
+## Emergency stop
+
+Keep a high-entropy `TRADING_OPERATOR_TOKEN` in the secret manager. An operator
+can activate the shared MongoDB stop without restarting services:
+
+```sh
+curl --fail-with-body -X POST http://127.0.0.1:3000/operator/trading/kill-switch \
+  -H "Authorization: Bearer $TRADING_OPERATOR_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"enabled":true,"reason":"Operator emergency stop"}'
+```
+
+The executor checks the shared stop before each action; the API records each
+change in `RuntimeAudits`. Confirm the dashboard shows “Emergency stop is
+active.” Before resuming, reconcile any uncertain broker submissions, resolve
+the incident, and use the same endpoint with `enabled:false` and a recorded
+reason. The environment `TRADING_KILL_SWITCH=true` remains a static emergency
+override and cannot be cleared through the API.
+
+Live trading must remain disabled unless both `MAX_POSITION_NOTIONAL` and
+`MAX_ORDERS_PER_MINUTE` are positive. The executor enforces the order-frequency
+limit atomically per Lighter account and checks the configured position limit
+against the broker's current position for that asset. These controls do not
+yet reserve aggregate exposure atomically across assets or workflows; keep
+real-money trading disabled until that account-wide control is implemented and
+verified.
+
 ## Rollback
 
 Images are immutable and should be tagged with the Git commit SHA. To roll

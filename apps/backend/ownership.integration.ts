@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
-import { ExecutionModel, RequestLimitModel, UserModel, WorkflowModel, WorkflowAuditModel } from "db/client";
+import { ExecutionModel, RequestLimitModel, RuntimeAuditModel, RuntimeControlModel, UserModel, WorkflowModel, WorkflowAuditModel } from "db/client";
 import { app } from "./index";
 import { JWT_AUDIENCE, JWT_ISSUER } from "./middleware";
 
@@ -165,6 +165,30 @@ describe("workflow ownership integration", () => {
     const credentials = await request("/credentials?page=1&pageSize=25", {}, userB);
     expect(credentials.status).toBe(200);
     expect(await credentials.json()).toMatchObject({ page: 1, pageSize: 25, items: expect.any(Array) });
+  });
+
+  integrationTest("operator emergency stop is authorized, shared, and audited", async () => {
+    const previous = process.env.TRADING_OPERATOR_TOKEN;
+    process.env.TRADING_OPERATOR_TOKEN = "integration-operator-token";
+    try {
+      const path = "/operator/trading/kill-switch";
+      const body = JSON.stringify({ enabled: true, reason: "Integration test stop" });
+      expect((await request(path, { method: "POST", body, headers: { authorization: "Bearer wrong" } }, userA)).status).toBe(401);
+      const enabled = await request(path, { method: "POST", body, headers: { authorization: "Bearer integration-operator-token" } }, userA);
+      expect(enabled.status).toBe(200);
+      expect((await RuntimeControlModel.findById("trading").lean())?.killSwitch).toBe(true);
+      expect(await RuntimeAuditModel.countDocuments({ action: "kill_switch.enabled" })).toBeGreaterThan(0);
+      const status = await request("/trading/status", {}, userA);
+      expect(await status.json()).toMatchObject({ killSwitch: true, ready: false });
+      const disabled = await request(path, { method: "POST", body: JSON.stringify({ enabled: false, reason: "Integration test recovery" }), headers: { authorization: "Bearer integration-operator-token" } }, userA);
+      expect(disabled.status).toBe(200);
+      expect((await RuntimeControlModel.findById("trading").lean())?.killSwitch).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.TRADING_OPERATOR_TOKEN;
+      else process.env.TRADING_OPERATOR_TOKEN = previous;
+      await RuntimeControlModel.deleteOne({ _id: "trading" });
+      await RuntimeAuditModel.deleteMany({ reason: { $in: ["Integration test stop", "Integration test recovery"] } });
+    }
   });
 
   integrationTest("keeps credential secrets out of responses and enforces lifecycle ownership", async () => {

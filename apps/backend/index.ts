@@ -1,7 +1,7 @@
 import express from 'express';
 import type { ErrorRequestHandler } from 'express';
 import mongoose from 'mongoose';
-import { CredentialModel, ExecutionModel, NodesModel, RequestLimitModel, UserModel, WorkflowAuditModel, WorkflowModel } from 'db/client';
+import { CredentialModel, ExecutionModel, NodesModel, RequestLimitModel, RuntimeAuditModel, RuntimeControlModel, UserModel, WorkflowAuditModel, WorkflowModel } from 'db/client';
 import { decryptCredential, encryptCredential } from 'db/credentials';
 import jwt from "jsonwebtoken"; 
 import { SignupSchema,SigninSchema, CreateWorkflowSchema, UpdateWorkflowSchema, validateWorkflowGraph } from 'common/types';
@@ -102,8 +102,33 @@ app.get("/metrics", (_req, res) => {
 });
 app.get("/trading/status", authMiddleware, (_req, res) => {
     const paper = process.env.TRADING_MODE !== "live";
-    const limitsReady = Number(process.env.MAX_ORDER_QUANTITY) > 0 && Number(process.env.MAX_ORDER_NOTIONAL) > 0;
-    res.json({ mode: paper ? "paper" : "live", priceSource: paper ? "fixed-demo-reference" : "broker", killSwitch: process.env.TRADING_KILL_SWITCH === "true", ready: limitsReady && process.env.TRADING_KILL_SWITCH !== "true" && (paper || process.env.LIVE_TRADING_ENABLED === "true") });
+    const baseLimitsReady = Number(process.env.MAX_ORDER_QUANTITY) > 0 && Number(process.env.MAX_ORDER_NOTIONAL) > 0;
+    void RuntimeControlModel.findById("trading").select("killSwitch").lean().then((control) => {
+        const killSwitch = process.env.TRADING_KILL_SWITCH === "true" || control?.killSwitch === true;
+        const limitsReady = baseLimitsReady && (paper || (Number(process.env.MAX_POSITION_NOTIONAL) > 0 && Number(process.env.MAX_ORDERS_PER_MINUTE) > 0));
+        res.json({ mode: paper ? "paper" : "live", priceSource: paper ? "fixed-demo-reference" : "broker", killSwitch, ready: limitsReady && !killSwitch && (paper || process.env.LIVE_TRADING_ENABLED === "true") });
+    }).catch(() => res.status(503).json({ message: "Trading status is temporarily unavailable" }));
+});
+
+app.post("/operator/trading/kill-switch", async (req, res) => {
+    const configuredToken = process.env.TRADING_OPERATOR_TOKEN;
+    const suppliedToken = req.header("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+    const suppliedBytes = Buffer.from(suppliedToken);
+    const configuredBytes = Buffer.from(configuredToken ?? "");
+    if (!configuredToken) { res.status(503).json({ message: "Operator controls are not configured" }); return; }
+    if (suppliedBytes.length !== configuredBytes.length || !timingSafeEqual(suppliedBytes, configuredBytes)) {
+        res.status(401).json({ message: "Operator authentication required" });
+        return;
+    }
+    const parsed = z.object({ enabled: z.boolean(), reason: z.string().trim().min(1).max(200) }).strict().safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ message: "Provide enabled and an audit reason" }); return; }
+    const control = await RuntimeControlModel.findOneAndUpdate(
+        { _id: "trading" },
+        { $set: { killSwitch: parsed.data.enabled, changedBy: "operator-token", reason: parsed.data.reason } },
+        { upsert: true, new: true, runValidators: true },
+    );
+    await RuntimeAuditModel.create({ action: parsed.data.enabled ? "kill_switch.enabled" : "kill_switch.disabled", operator: "operator-token", reason: parsed.data.reason });
+    res.json({ killSwitch: control.killSwitch, updatedAt: control.updatedAt });
 });
 
 app.post("/signup", async (req, res) => {
@@ -744,7 +769,7 @@ export async function startServer() {
         throw new Error("MONGO_URL, JWT_SECRET, and CREDENTIAL_ENCRYPTION_KEY are required");
     }
     await mongoose.connect(MONGO_URL);
-    await RequestLimitModel.init();
+    await Promise.all([RequestLimitModel.init(), RuntimeControlModel.init(), RuntimeAuditModel.init()]);
     server = app.listen(process.env.PORT || 3000);
     return server;
 }

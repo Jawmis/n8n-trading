@@ -15,6 +15,8 @@ shared MongoDB counters (10 signup/signin attempts per client IP per 15 minutes;
 600 API requests per client IP per 15 minutes). Keep `TRUST_PROXY_HOPS=0` unless
 the API is behind a known proxy; set it to the exact number of trusted proxy
 hops so client-supplied forwarding headers cannot bypass throttling.
+Set a separate high-entropy `TRADING_OPERATOR_TOKEN` to enable the audited
+runtime emergency-stop endpoint described in `OPERATIONS.md`.
 
 The API is available on port 3000, the executor probe on port 3001, and the
 client on port 80. The client image configures an Nginx SPA fallback so direct

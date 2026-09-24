@@ -24,6 +24,9 @@ test("persists action intent and submission state before recording the result", 
   const priorMode = process.env.TRADING_MODE;
   const priorQuantity = process.env.MAX_ORDER_QUANTITY;
   const priorNotional = process.env.MAX_ORDER_NOTIONAL;
+  const globals = globalThis as typeof globalThis & { RUNTIME_KILL_SWITCH_READER?: () => Promise<boolean> };
+  const priorRuntimeReader = globals.RUNTIME_KILL_SWITCH_READER;
+  globals.RUNTIME_KILL_SWITCH_READER = async () => false;
   process.env.TRADING_MODE = "paper";
   process.env.MAX_ORDER_QUANTITY = "10";
   process.env.MAX_ORDER_NOTIONAL = "1000000";
@@ -50,5 +53,7 @@ test("persists action intent and submission state before recording the result", 
     else process.env.MAX_ORDER_QUANTITY = priorQuantity;
     if (priorNotional === undefined) delete process.env.MAX_ORDER_NOTIONAL;
     else process.env.MAX_ORDER_NOTIONAL = priorNotional;
+    if (priorRuntimeReader === undefined) delete globals.RUNTIME_KILL_SWITCH_READER;
+    else globals.RUNTIME_KILL_SWITCH_READER = priorRuntimeReader;
   }
 });

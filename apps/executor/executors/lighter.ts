@@ -1,5 +1,6 @@
 import type { WorkflowNodeLike } from "../execute";
 import { validateTradeRisk } from "../risk";
+import { RequestLimitModel, RuntimeControlModel } from "db/client";
 import { paperReferencePrice } from "../paper";
 import { AccountApi, ApiClient, MarketHelper, OrderApi, SignerClient, resolveNetworkFromEnv } from "lighter-ts-sdk";
 const assets = new Set(["SOL", "BTC", "ETH"]);
@@ -153,12 +154,35 @@ export function parseLighterOrder(node: WorkflowNodeLike, requireCredentials = t
   return { asset: asset as LighterOrder["asset"], quantity, side: side === "bid" ? "long" : side === "ask" ? "short" : side as "long" | "short", price: metadata.price === undefined ? undefined : Number(metadata.price), clientOrderIndex, leverage, reduceOnly: metadata.reduceOnly === true, apiKey: String(credentials.apiKey), accountIndex: credentials.accountIndex as string | number, apiIndex: credentials.apiIndex as string | number };
 }
 
-export async function executeLighter(node: WorkflowNodeLike, client?: LighterClient, beforeSubmit: () => Promise<void> = async () => {}) {
+async function reserveAccountOrderSlot(accountIndex: string | number) {
+  const maxOrders = Number(process.env.MAX_ORDERS_PER_MINUTE);
+  const now = Date.now();
+  const windowStart = new Date(Math.floor(now / 60_000) * 60_000);
+  const key = `lighter-order:${process.env.LIGHTER_NETWORK ?? "mainnet"}:${accountIndex}`;
+  const limit = await RequestLimitModel.findOneAndUpdate(
+    { key, windowStart },
+    { $inc: { count: 1 }, $setOnInsert: { expiresAt: new Date(windowStart.getTime() + 24 * 60 * 60_000) } },
+    { upsert: true, new: true },
+  ).select("count").lean();
+  if (!limit || limit.count > maxOrders) throw new Error("Account order-frequency limit reached");
+}
+
+export async function executeLighter(node: WorkflowNodeLike, client?: LighterClient, beforeSubmit: () => Promise<void> = async () => {}, isRuntimeStopped: () => Promise<boolean> = async () => {
+  const injected = (globalThis as typeof globalThis & { RUNTIME_KILL_SWITCH_READER?: () => Promise<boolean> }).RUNTIME_KILL_SWITCH_READER;
+  if (injected) return injected();
+  const control = await RuntimeControlModel.findById("trading").select("killSwitch").lean();
+  return control?.killSwitch === true;
+}, reserveOrderSlot: (accountIndex: string | number) => Promise<void> = reserveAccountOrderSlot) {
   const paper = process.env.TRADING_MODE !== "live";
+  const checkKillSwitch = async () => {
+    if (process.env.TRADING_KILL_SWITCH === "true") throw new Error("Trading kill switch is enabled");
+    if (await isRuntimeStopped()) throw new Error("Trading kill switch is enabled");
+  };
   const order = parseLighterOrder(node, !paper);
   if (paper) {
     const referencePrice = paperReferencePrice(order.asset);
     const risk = validateTradeRisk({ ...order, price: order.price }, referencePrice);
+    await checkKillSwitch();
     await beforeSubmit();
     if (risk.mode !== "paper") throw new Error("Paper mode changed during execution");
     return { mode: "paper", priceSource: "fixed-demo-reference", order: { asset: order.asset, quantity: order.quantity, side: order.side, referencePrice, requestedPrice: order.price, leverage: order.leverage, reduceOnly: order.reduceOnly } };
@@ -182,6 +206,9 @@ export async function executeLighter(node: WorkflowNodeLike, client?: LighterCli
       ? await exchange.getPositionNotional(order.asset)
       : undefined;
     const risk = validateTradeRisk({ ...executableOrder, price: order.price }, market.price, currentPositionNotional);
+    await checkKillSwitch();
+    await reserveOrderSlot(order.accountIndex!);
+    await checkKillSwitch();
     await beforeSubmit();
     if (risk.mode !== "live") throw new Error("Live mode changed during execution");
     return await exchange.placeOrder(executableOrder);
