@@ -41,6 +41,7 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.executor
     restart: unless-stopped
+    stop_grace_period: 7m
     environment:
       MONGO_URL: mongodb://mongo:27017/trading
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY is required}

@@ -3,7 +3,11 @@ import { validateTradeRisk } from "../risk";
 import { paperReferencePrice } from "../paper";
 import { AccountApi, ApiClient, MarketHelper, OrderApi, SignerClient, resolveNetworkFromEnv } from "lighter-ts-sdk";
 const assets = new Set(["SOL", "BTC", "ETH"]);
-export interface LighterOrder { asset: "SOL" | "BTC" | "ETH"; quantity: number; side: "long" | "short"; price?: number; leverage?: number; reduceOnly?: boolean; apiKey: string; accountIndex: string | number; apiIndex: string | number; }
+function lighterRequestTimeoutMs() {
+  const value = Number(process.env.LIGHTER_REQUEST_TIMEOUT_MS ?? 20_000);
+  return Number.isFinite(value) && value >= 1_000 ? Math.min(value, 30_000) : 20_000;
+}
+export interface LighterOrder { asset: "SOL" | "BTC" | "ETH"; quantity: number; side: "long" | "short"; price?: number; clientOrderIndex?: number; leverage?: number; reduceOnly?: boolean; apiKey: string; accountIndex: string | number; apiIndex: string | number; }
 export interface LighterClient { getMarketPrice(asset: string): Promise<{ price: number; priceDecimals?: number; quantityDecimals?: number }>; getPositionNotional?: (asset: string) => Promise<number>; placeOrder(order: LighterOrder & { price: number }): Promise<unknown>; getOrderStatus?: (asset: string, orderId: number) => Promise<unknown>; cancelOrder?: (asset: string, orderId: number) => Promise<unknown>; close?: () => Promise<void>; }
 
 type Market = { helper: MarketHelper; priceDecimals: number; quantityDecimals: number };
@@ -29,7 +33,7 @@ export class SdkLighterClient implements LighterClient {
   constructor(credentials: { apiPrivateKey?: string; apiKey?: string; accountIndex: string | number; apiIndex: string | number }) {
     const network = resolveNetworkFromEnv();
     const apiUrl = process.env.LIGHTER_API_URL || network.apiUrl;
-    this.apiClient = new ApiClient({ host: apiUrl });
+    this.apiClient = new ApiClient({ host: apiUrl, timeout: lighterRequestTimeoutMs() });
     this.orderApi = new OrderApi(this.apiClient);
     this.accountApi = new AccountApi(this.apiClient);
     this.accountIndex = Number(credentials.accountIndex);
@@ -73,6 +77,7 @@ export class SdkLighterClient implements LighterClient {
 
   async placeOrder(order: LighterOrder & { price: number }) {
     if (!this.signer) throw new Error("Lighter live trading requires an API private key");
+    if (!Number.isSafeInteger(order.clientOrderIndex) || !order.clientOrderIndex || order.clientOrderIndex < 0) throw new Error("Lighter order requires a persisted client order index");
     const market = await this.market(order.asset);
     await this.signer.initialize();
     const config = market.helper.getConfig();
@@ -90,7 +95,7 @@ export class SdkLighterClient implements LighterClient {
     }
     const [result, hash, error] = await this.signer.createMarketOrder({
       marketIndex: config.index,
-      clientOrderIndex: Date.now(),
+      clientOrderIndex: order.clientOrderIndex!,
       baseAmount,
       avgExecutionPrice: priceUnits,
       isAsk: order.side === "short",
@@ -142,7 +147,10 @@ export function parseLighterOrder(node: WorkflowNodeLike, requireCredentials = t
   if (requireCredentials && (!credentials.apiKey || credentials.accountIndex === undefined || credentials.apiIndex === undefined)) throw new Error("Lighter credentials require apiKey, accountIndex, and apiIndex");
   const leverage = metadata.leverage === undefined ? undefined : Number(metadata.leverage);
   if (leverage !== undefined && (!Number.isFinite(leverage) || leverage <= 0)) throw new Error("Lighter leverage must be greater than zero");
-  return { asset: asset as LighterOrder["asset"], quantity, side: side === "bid" ? "long" : side === "ask" ? "short" : side as "long" | "short", price: metadata.price === undefined ? undefined : Number(metadata.price), leverage, reduceOnly: metadata.reduceOnly === true, apiKey: String(credentials.apiKey), accountIndex: credentials.accountIndex as string | number, apiIndex: credentials.apiIndex as string | number };
+  const clientOrderIndex = node.clientOrderIndex;
+  if (clientOrderIndex !== undefined && (!Number.isSafeInteger(clientOrderIndex) || clientOrderIndex <= 0)) throw new Error("Lighter client order index must be a positive safe integer");
+  if (requireCredentials && clientOrderIndex === undefined) throw new Error("Live Lighter orders require a persisted client order index");
+  return { asset: asset as LighterOrder["asset"], quantity, side: side === "bid" ? "long" : side === "ask" ? "short" : side as "long" | "short", price: metadata.price === undefined ? undefined : Number(metadata.price), clientOrderIndex, leverage, reduceOnly: metadata.reduceOnly === true, apiKey: String(credentials.apiKey), accountIndex: credentials.accountIndex as string | number, apiIndex: credentials.apiIndex as string | number };
 }
 
 export async function executeLighter(node: WorkflowNodeLike, client?: LighterClient, beforeSubmit: () => Promise<void> = async () => {}) {
@@ -155,24 +163,29 @@ export async function executeLighter(node: WorkflowNodeLike, client?: LighterCli
     if (risk.mode !== "paper") throw new Error("Paper mode changed during execution");
     return { mode: "paper", priceSource: "fixed-demo-reference", order: { asset: order.asset, quantity: order.quantity, side: order.side, referencePrice, requestedPrice: order.price, leverage: order.leverage, reduceOnly: order.reduceOnly } };
   }
-  const exchange = client ?? (globalThis as typeof globalThis & { LIGHTER_CLIENT?: LighterClient }).LIGHTER_CLIENT ?? createLighterClient(node.credentials ?? {});
+  const injectedClient = client ?? (globalThis as typeof globalThis & { LIGHTER_CLIENT?: LighterClient }).LIGHTER_CLIENT;
+  const exchange = injectedClient ?? createLighterClient(node.credentials ?? {});
   if (!exchange) throw new Error("No Lighter client configured (inject one or set globalThis.LIGHTER_CLIENT)");
-  const market = await exchange.getMarketPrice(order.asset);
-  if (!Number.isFinite(market.price) || market.price <= 0) throw new Error("Lighter returned an invalid market price");
-  const round = (value: number, decimals: number) => Number(value.toFixed(decimals));
-  const quantity = round(order.quantity, market.quantityDecimals ?? 4);
-  const price = round(order.price ?? market.price, market.priceDecimals ?? 2);
-  if (quantity !== order.quantity) throw new Error("Lighter quantity has invalid precision");
-  if (order.price !== undefined && price !== order.price) throw new Error("Lighter price has invalid precision");
-  const executableOrder = { ...order, quantity, price };
-  // Validate slippage only against a user-specified limit. The rounded market
-  // execution price is an exchange encoding detail, not a user price bound.
-  const maxPositionNotional = Number(process.env.MAX_POSITION_NOTIONAL ?? 0);
-  const currentPositionNotional = maxPositionNotional > 0 && exchange.getPositionNotional
-    ? await exchange.getPositionNotional(order.asset)
-    : undefined;
-  const risk = validateTradeRisk({ ...executableOrder, price: order.price }, market.price, currentPositionNotional);
-  await beforeSubmit();
-  if (risk.mode !== "live") throw new Error("Live mode changed during execution");
-  return exchange.placeOrder(executableOrder);
+  try {
+    const market = await exchange.getMarketPrice(order.asset);
+    if (!Number.isFinite(market.price) || market.price <= 0) throw new Error("Lighter returned an invalid market price");
+    const round = (value: number, decimals: number) => Number(value.toFixed(decimals));
+    const quantity = round(order.quantity, market.quantityDecimals ?? 4);
+    const price = round(order.price ?? market.price, market.priceDecimals ?? 2);
+    if (quantity !== order.quantity) throw new Error("Lighter quantity has invalid precision");
+    if (order.price !== undefined && price !== order.price) throw new Error("Lighter price has invalid precision");
+    const executableOrder = { ...order, quantity, price };
+    // Validate slippage only against a user-specified limit. The rounded market
+    // execution price is an exchange encoding detail, not a user price bound.
+    const maxPositionNotional = Number(process.env.MAX_POSITION_NOTIONAL ?? 0);
+    const currentPositionNotional = maxPositionNotional > 0 && exchange.getPositionNotional
+      ? await exchange.getPositionNotional(order.asset)
+      : undefined;
+    const risk = validateTradeRisk({ ...executableOrder, price: order.price }, market.price, currentPositionNotional);
+    await beforeSubmit();
+    if (risk.mode !== "live") throw new Error("Live mode changed during execution");
+    return await exchange.placeOrder(executableOrder);
+  } finally {
+    if (!injectedClient) await exchange.close?.();
+  }
 }

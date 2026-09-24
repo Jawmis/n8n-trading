@@ -203,6 +203,9 @@ const ExecutionSchema = new Schema({
     claimedAt: {
         type: Date
     },
+    cancelRequestedAt: {
+        type: Date
+    },
     leaseUntil: {
         type: Date
     },

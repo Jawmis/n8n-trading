@@ -28,18 +28,25 @@ Never commit backup archives or encryption keys. Keep
 `CREDENTIAL_ENCRYPTION_KEY` backed up in the deployment secret manager; losing
 it makes encrypted broker credentials unrecoverable.
 
-## Legacy credential migration
+## Legacy workflow migration
 
-Before enabling execution for a migrated installation, audit workflow
-documents for the legacy nodes[].credentials field. For each affected
-workflow, identify the owning user and broker, ask the owner to create or
-rotate a credential through the credential API, attach the returned credential
-ID to the action node, and verify a paper-mode test. Do not infer a broker or
-reconstruct secrets from logs or backups. Keep the workflow disabled until the
-owner re-enters an unknown or incomplete secret. After verification, remove the
-legacy inline field with a controlled migration script and confirm a workflow
-read contains only credential metadata/IDs. Record the count of migrated,
-blocked, and manually remediated workflows for the release audit.
+Follow the dry-run and apply sequence in `deploy/README.md`. The migration
+does not copy inline secrets into credential records: it deletes legacy inline
+credentials and published snapshots, pauses workflows, and reports invalid
+graphs and credential references. Owners must review each draft, create or
+rotate credentials through the credential API, attach their own active
+credential IDs, and publish a new version before enabling. Never infer broker
+ownership or reconstruct secrets from logs or backups. Keep all migrated
+workflows paused until their owners complete that review.
+
+## Execution bounds and shutdown
+
+The executor caps one run at five minutes. Lighter REST requests use a 20
+second timeout by default; `LIGHTER_REQUEST_TIMEOUT_MS` can lower this and is
+capped at 30 seconds. Lighter transaction submission has the SDK's 10 second
+timeout. Compose allows the executor seven minutes to finish its current
+bounded request and shut down. An in-flight order with no confirmed response
+is held for operator reconciliation and is not submitted again automatically.
 
 ## Rollback
 

@@ -105,6 +105,38 @@ describe("workflow ownership integration", () => {
     expect(history.status).toBe(404);
   });
 
+  integrationTest("requires the owner to reconcile an uncertain broker order before releasing its workflow lock", async () => {
+    const clientOrderIndex = 1234567890123;
+    const execution = await ExecutionModel.create({
+      workflowId,
+      kind: "manual",
+      status: "failure",
+      activeKey: workflowId.toString(),
+      queueKey: `${workflowId}:manual`,
+      results: [{ nodeId: "trade", clientOrderIndex, status: "uncertain", error: "Broker outcome is uncertain" }],
+    });
+    const path = `/workflow/executions/${execution._id}/reconcile`;
+    const body = JSON.stringify({ clientOrderIndex, outcome: "accepted", note: "Verified in broker order history" });
+    expect((await request(path, { method: "POST", body }, userB)).status).toBe(404);
+    const reconciled = await request(path, { method: "POST", body }, userA);
+    expect(reconciled.status).toBe(200);
+    const stored = await ExecutionModel.findById(execution._id).lean();
+    expect(stored?.activeKey).toBeUndefined();
+    expect(stored?.queueKey).toBeUndefined();
+    expect((stored?.results as Array<{ status?: string; reconciliation?: { outcome?: string } }>)[0]).toMatchObject({ status: "reconciled", reconciliation: { outcome: "accepted" } });
+    expect((await request(path, { method: "POST", body }, userA)).status).toBe(409);
+  });
+
+  integrationTest("requests cancellation of running work without releasing its overlap lock", async () => {
+    const execution = await ExecutionModel.create({ workflowId, kind: "manual", status: "running", attempt: 1, activeKey: workflowId.toString(), queueKey: `${workflowId}:manual` });
+    const response = await request(`/workflow/executions/${execution._id}/cancel`, { method: "POST" }, userA);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "running", cancellationRequested: true });
+    const stored = await ExecutionModel.findById(execution._id).lean();
+    expect(stored?.cancelRequestedAt).toBeInstanceOf(Date);
+    expect(stored?.activeKey).toBe(workflowId.toString());
+  });
+
   integrationTest("returns 404 for malformed workflow IDs without querying another resource", async () => {
     expect((await request("/workflow/not-an-object-id" as string)).status).toBe(404);
     expect((await request("/workflow/not-an-object-id/execute", { method: "POST" })).status).toBe(404);

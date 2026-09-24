@@ -104,16 +104,29 @@ async function enqueueTimerJobs(now: number) {
 }
 
 async function claimAndStartJob(now: number): Promise<boolean> {
+  const expiredLease = { status: "running" as const, leaseUntil: { $lte: new Date(now) } };
+  const uncertainStatuses = ["submitting", "uncertain"] as const;
   await ExecutionModel.updateMany(
-    {
-      status: "running",
-      leaseUntil: { $lte: new Date(now) },
-    },
+    { ...expiredLease, results: { $elemMatch: { status: { $in: uncertainStatuses } } } },
     {
       $set: {
         status: "failure",
         endTime: new Date(now),
-        error: "Worker lease expired. Reconcile broker orders before retrying.",
+        error: "Worker lease expired with an uncertain broker order. Reconcile before another run.",
+        "results.$[order].status": "uncertain",
+        "results.$[order].error": "Broker outcome is uncertain. Reconcile this order before retrying.",
+      },
+      $unset: { leaseUntil: 1 },
+    },
+    { arrayFilters: [{ "order.status": "submitting" }] },
+  );
+  await ExecutionModel.updateMany(
+    { ...expiredLease, results: { $not: { $elemMatch: { status: { $in: uncertainStatuses } } } } },
+    {
+      $set: {
+        status: "failure",
+        endTime: new Date(now),
+        error: "Worker lease expired before an uncertain broker submission.",
         leaseUntil: null,
       },
       $unset: { queueKey: 1, activeKey: 1 },

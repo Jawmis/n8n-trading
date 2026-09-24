@@ -42,8 +42,8 @@ describe("Lighter action adapter", () => {
       getMarketPrice: async () => ({ price: 100.123, priceDecimals: 2, quantityDecimals: 3 }),
       placeOrder: async (order: Record<string, unknown>) => { submitted = order; return { transactionHash: "tx-1" }; },
     };
-    await executeLighter(node);
-    expect(submitted).toMatchObject({ asset: "BTC", quantity: 1, side: "long", price: 100.12, reduceOnly: true });
+    await executeLighter({ ...node, clientOrderIndex: 1234567890123 });
+    expect(submitted).toMatchObject({ asset: "BTC", quantity: 1, side: "long", price: 100.12, clientOrderIndex: 1234567890123, reduceOnly: true });
     expect(submitted?.apiKey).toBe("private-key");
   });
 
@@ -63,7 +63,7 @@ describe("Lighter action adapter", () => {
       getMarketPrice: async () => ({ price: 100, priceDecimals: 2, quantityDecimals: 3 }),
       placeOrder: async () => ({ transactionHash: "tx-1" }),
     };
-    await expect(executeLighter({ ...node, data: { kind: "ACTION", metadata: { type: "LONG", symbol: "BTC", qty: 1.0001 } } })).rejects.toThrow("quantity");
-    await expect(executeLighter({ ...node, data: { kind: "ACTION", metadata: { type: "LONG", symbol: "BTC", qty: 1, price: 100.001 } } })).rejects.toThrow("price");
+    await expect(executeLighter({ ...node, clientOrderIndex: 1234567890123, data: { kind: "ACTION", metadata: { type: "LONG", symbol: "BTC", qty: 1.0001 } } })).rejects.toThrow("quantity");
+    await expect(executeLighter({ ...node, clientOrderIndex: 1234567890123, data: { kind: "ACTION", metadata: { type: "LONG", symbol: "BTC", qty: 1, price: 100.001 } } })).rejects.toThrow("price");
   });
 });

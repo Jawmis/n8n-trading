@@ -410,6 +410,15 @@ app.delete("/workflow/:workflowId", authMiddleware, async (req, res) => {
         res.status(404).json({ message: "Workflow not found" });
         return;
     }
+    const ownedWorkflow = await WorkflowModel.exists({ _id: req.params.workflowId, userId: req.userId });
+    if (!ownedWorkflow) {
+        res.status(404).json({ message: "Workflow not found" });
+        return;
+    }
+    if (await ExecutionModel.exists({ workflowId: req.params.workflowId, activeKey: { $type: "string" } })) {
+        res.status(409).json({ message: "Resolve or stop the active execution before deleting this workflow" });
+        return;
+    }
     const deleted = await WorkflowModel.findOneAndDelete({ _id: req.params.workflowId, userId: req.userId });
     if (!deleted) {
         res.status(404).json({ message: "Workflow not found" });
@@ -603,17 +612,27 @@ app.post("/workflow/executions/:executionId/cancel", authMiddleware, async (req,
         res.status(404).json({ message: "Execution not found" });
         return;
     }
-    const updated = await ExecutionModel.findOneAndUpdate(
-        { _id: execution._id, status: { $in: ["pending", "running"] } },
-        { $set: { status: "cancelled", endTime: new Date(), error: "Cancelled by user", leaseUntil: null }, $unset: { queueKey: 1, activeKey: 1 } },
+    const pending = await ExecutionModel.findOneAndUpdate(
+        { _id: execution._id, status: "pending" },
+        { $set: { status: "cancelled", endTime: new Date(), error: "Cancelled before execution started", leaseUntil: null }, $unset: { queueKey: 1, activeKey: 1 } },
         { returnDocument: "after" },
     );
-    if (!updated) {
+    if (pending) {
+        await recordWorkflowAudit(req.userId, execution.workflowId, "execution.cancelled", { executionId: execution._id.toString(), phase: "pending" });
+        res.json({ id: pending._id, status: pending.status });
+        return;
+    }
+    const running = await ExecutionModel.findOneAndUpdate(
+        { _id: execution._id, status: "running" },
+        { $set: { cancelRequestedAt: new Date() } },
+        { returnDocument: "after" },
+    );
+    if (!running) {
         res.status(409).json({ message: "Execution is already complete" });
         return;
     }
-    await recordWorkflowAudit(req.userId, execution.workflowId, "execution.cancelled", { executionId: execution._id.toString() });
-    res.json({ id: updated._id, status: updated.status });
+    await recordWorkflowAudit(req.userId, execution.workflowId, "execution.cancel_requested", { executionId: execution._id.toString(), phase: "running" });
+    res.json({ id: running._id, status: running.status, cancellationRequested: true });
 });
 
 app.post("/workflow/executions/:executionId/retry", authMiddleware, async (req, res) => {
@@ -630,12 +649,51 @@ app.post("/workflow/executions/:executionId/retry", authMiddleware, async (req, 
         res.status(409).json({ message: "Only failed executions can be retried" });
         return;
     }
+    if (Array.isArray(execution.results) && execution.results.some((result) => result && typeof result === "object" && ["submitting", "uncertain"].includes(String((result as { status?: unknown }).status)))) {
+        res.status(409).json({ message: "Execution has an uncertain broker order outcome; reconcile it before retrying" });
+        return;
+    }
     const workflow = await WorkflowModel.findOne({ _id: execution.workflowId, userId: req.userId, enabled: true });
     if (!workflow || !execution.snapshot) { res.status(409).json({ message: "Retry requires an enabled workflow and a saved execution version" }); return; }
     if (process.env.TRADING_MODE === "live") { res.status(409).json({ message: "Automatic retry is unavailable for live trading until broker orders are reconciled" }); return; }
     const retry = await ExecutionModel.create({ workflowId: execution.workflowId, kind: execution.kind, status: "pending", queueKey: `${execution.workflowId}:manual`, activeKey: execution.workflowId.toString(), snapshot: execution.snapshot, workflowRevision: execution.workflowRevision });
     await recordWorkflowAudit(req.userId, execution.workflowId, "execution.retried", { executionId: execution._id.toString(), retryId: retry._id.toString() });
     res.status(202).json({ id: retry._id, status: retry.status });
+});
+
+app.post("/workflow/executions/:executionId/reconcile", authMiddleware, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.executionId)) { res.status(404).json({ message: "Execution not found" }); return; }
+    const parsed = z.object({
+        clientOrderIndex: z.number().int().positive().safe(),
+        outcome: z.enum(["accepted", "rejected", "not_found"]),
+        note: z.string().trim().max(500).optional(),
+    }).strict().safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ message: "Provide the verified broker outcome and client order index" }); return; }
+    const execution = await ExecutionModel.findById(req.params.executionId);
+    if (!execution || !(await WorkflowModel.exists({ _id: execution.workflowId, userId: req.userId }))) {
+        res.status(404).json({ message: "Execution not found" });
+        return;
+    }
+    if (!["failure", "cancelled"].includes(execution.status ?? "")) {
+        res.status(409).json({ message: "Only a stopped execution can be reconciled" });
+        return;
+    }
+    const orderResult = Array.isArray(execution.results)
+        ? execution.results.find((result) => result && typeof result === "object" && (result as { clientOrderIndex?: unknown }).clientOrderIndex === parsed.data.clientOrderIndex && ["submitting", "uncertain"].includes(String((result as { status?: unknown }).status))) as Record<string, unknown> | undefined
+        : undefined;
+    if (!orderResult) { res.status(409).json({ message: "No unresolved order intent has that client order index" }); return; }
+    const reconciliation = { outcome: parsed.data.outcome, note: parsed.data.note, by: req.userId, at: new Date() };
+    const results = (execution.results as Array<Record<string, unknown>>).map((result) => result.clientOrderIndex === parsed.data.clientOrderIndex
+        ? { ...result, status: "reconciled", error: "", reconciliation }
+        : result);
+    const updated = await ExecutionModel.findOneAndUpdate(
+        { _id: execution._id, status: execution.status, results: { $elemMatch: { clientOrderIndex: parsed.data.clientOrderIndex, status: { $in: ["submitting", "uncertain"] } } } },
+        { $set: { results }, $unset: { activeKey: 1, queueKey: 1, leaseUntil: 1 } },
+        { returnDocument: "after" },
+    );
+    if (!updated) { res.status(409).json({ message: "Order was reconciled by another request; refresh and try again" }); return; }
+    await recordWorkflowAudit(req.userId, execution.workflowId, "execution.reconciled", { executionId: execution._id.toString(), clientOrderIndex: parsed.data.clientOrderIndex, outcome: parsed.data.outcome });
+    res.json({ id: updated._id, status: updated.status, reconciled: true });
 });
 
 app.get("/nodes", async (req, res) => {

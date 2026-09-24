@@ -152,7 +152,7 @@ export async function apiListWorkflows(): Promise<Workflow[]> {
 }
 
 export type ExecutionStatus = "pending" | "running" | "success" | "failure" | "cancelled";
-export type WorkflowExecution = { _id?: string; id?: string; workflowRevision?: number; status?: ExecutionStatus; startTime?: string; endTime?: string; error?: string; results?: Array<{ nodeId: string; result?: unknown; status?: string; error?: string }> };
+export type WorkflowExecution = { _id?: string; id?: string; workflowRevision?: number; status?: ExecutionStatus; cancelRequestedAt?: string; startTime?: string; endTime?: string; error?: string; results?: Array<{ nodeId: string; clientOrderIndex?: number; result?: unknown; status?: string; error?: string; reconciliation?: { outcome: 'accepted' | 'rejected' | 'not_found'; note?: string; at: string } }> };
 export type WorkflowAuditEvent = { _id: string; action: string; metadata?: Record<string, unknown>; createdAt: string };
 export type PaginatedExecutions = { items: WorkflowExecution[]; page: number; pageSize: number; total: number; totalPages: number };
 
@@ -173,6 +173,10 @@ export async function apiCancelExecution(executionId: string): Promise<void> {
 export async function apiRetryExecution(executionId: string): Promise<IdResponse> {
   const res = await api.post<IdResponse>(`/workflow/executions/${executionId}/retry`);
   return res.data;
+}
+
+export async function apiReconcileExecution(executionId: string, body: { clientOrderIndex: number; outcome: 'accepted' | 'rejected' | 'not_found'; note?: string }): Promise<void> {
+  await api.post(`/workflow/executions/${executionId}/reconcile`, body);
 }
 
 export async function apiListNodes(): Promise<unknown[]> {
