@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from 'bun:test';
 import mongoose from 'mongoose';
-import { CredentialModel, ExecutionModel, WorkflowModel } from 'db/client';
+import { CredentialModel, ExecutionModel, RequestLimitModel, RuntimeControlModel, WorkflowModel } from 'db/client';
 import { encryptCredential } from 'db/credentials';
 import { executeWorkflow, type WorkflowLike } from './execute';
 import { pollOnce } from './index';
@@ -16,7 +16,7 @@ let quotes = 0;
 beforeAll(async () => {
   if (process.env.RUN_INTEGRATION_TESTS !== '1') return;
   await mongoose.connect(process.env.MONGO_URL!);
-  await ExecutionModel.init();
+  await Promise.all([ExecutionModel.init(), RequestLimitModel.init(), RuntimeControlModel.init()]);
 });
 
 beforeEach(async () => {
@@ -104,4 +104,24 @@ integration('invalid stored graphs fail the job without waiting for lease expiry
   await expect(executeWorkflow({ ...snapshot, edges: [] }, job._id)).rejects.toThrow();
   expect((await ExecutionModel.findById(job._id))!.status).toBe('failure');
   expect(quotes).toBe(0);
+});
+
+integration('holds the workflow lock after a submission response is lost', async () => {
+  process.env.TRADING_MODE = 'live';
+  process.env.LIVE_TRADING_ENABLED = 'true';
+  process.env.MAX_POSITION_NOTIONAL = '1000000';
+  process.env.MAX_ORDERS_PER_MINUTE = '10';
+  globals.LIGHTER_CLIENT = {
+    getMarketPrice: async () => ({ price: 100 }),
+    getPositionNotional: async () => 0,
+    placeOrder: async () => { throw new Error('simulated lost response after broker acceptance'); },
+  };
+  const job = await ExecutionModel.create({ workflowId, kind: 'manual', status: 'running', attempt: 1, activeKey: workflowId.toString(), queueKey: `${workflowId}:uncertain:test` });
+  await expect(executeWorkflow(snapshot, job._id)).rejects.toThrow();
+  const stored = await ExecutionModel.findById(job._id).lean();
+  expect(stored?.status).toBe('failure');
+  expect(stored?.activeKey).toBe(workflowId.toString());
+  expect(stored?.queueKey).toBe(`${workflowId}:uncertain:test`);
+  expect((stored?.results as Array<{ status?: string; clientOrderIndex?: number }>)[0]).toMatchObject({ status: 'uncertain', clientOrderIndex: expect.any(Number) });
+  expect((stored?.results as Array<{ nodeId?: string }>).some((result) => result.nodeId === 'b')).toBe(false);
 });
