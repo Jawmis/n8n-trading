@@ -177,7 +177,7 @@ describe("workflow ownership integration", () => {
       const enabled = await request(path, { method: "POST", body, headers: { authorization: "Bearer integration-operator-token" } }, userA);
       expect(enabled.status).toBe(200);
       expect((await RuntimeControlModel.findById("trading").lean())?.killSwitch).toBe(true);
-      expect(await RuntimeAuditModel.countDocuments({ action: "kill_switch.enabled" })).toBeGreaterThan(0);
+      expect(await RuntimeAuditModel.countDocuments({ action: "kill_switch.enabled", succeeded: true })).toBeGreaterThan(0);
       const status = await request("/trading/status", {}, userA);
       expect(await status.json()).toMatchObject({ killSwitch: true, ready: false });
       const disabled = await request(path, { method: "POST", body: JSON.stringify({ enabled: false, reason: "Integration test recovery" }), headers: { authorization: "Bearer integration-operator-token" } }, userA);

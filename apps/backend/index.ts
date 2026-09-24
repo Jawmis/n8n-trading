@@ -122,12 +122,13 @@ app.post("/operator/trading/kill-switch", async (req, res) => {
     }
     const parsed = z.object({ enabled: z.boolean(), reason: z.string().trim().min(1).max(200) }).strict().safeParse(req.body);
     if (!parsed.success) { res.status(400).json({ message: "Provide enabled and an audit reason" }); return; }
+    const audit = await RuntimeAuditModel.create({ action: "kill_switch.change", operator: "operator-token", enabled: parsed.data.enabled, succeeded: false, reason: parsed.data.reason });
     const control = await RuntimeControlModel.findOneAndUpdate(
         { _id: "trading" },
         { $set: { killSwitch: parsed.data.enabled, changedBy: "operator-token", reason: parsed.data.reason } },
         { upsert: true, new: true, runValidators: true },
     );
-    await RuntimeAuditModel.create({ action: parsed.data.enabled ? "kill_switch.enabled" : "kill_switch.disabled", operator: "operator-token", reason: parsed.data.reason });
+    await RuntimeAuditModel.updateOne({ _id: audit._id }, { $set: { succeeded: true, action: parsed.data.enabled ? "kill_switch.enabled" : "kill_switch.disabled" } });
     res.json({ killSwitch: control.killSwitch, updatedAt: control.updatedAt });
 });
 

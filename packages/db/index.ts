@@ -250,6 +250,8 @@ const RuntimeControlSchema = new Schema({
 const RuntimeAuditSchema = new Schema({
     action: { type: String, required: true },
     operator: { type: String, required: true },
+    enabled: { type: Boolean, required: true },
+    succeeded: { type: Boolean, required: true, default: false },
     reason: { type: String, maxlength: 200 },
 }, { timestamps: true });
 RuntimeAuditSchema.index({ createdAt: -1 });
