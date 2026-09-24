@@ -7,6 +7,15 @@ const TOKEN_KEY = "auth_token";
 export type IdResponse = { id: string };
 export type SigninResponse = { id: string; token: string };
 export type Credential = { _id: string; provider: string; createdAt?: string; updatedAt?: string; revokedAt?: string };
+type PaginatedItems<T> = { items: T[]; page: number; pageSize: number; total: number; totalPages: number };
+
+async function fetchAllPages<T>(path: string): Promise<T[]> {
+  const first = await api.get<PaginatedItems<T>>(path, { params: { page: 1, pageSize: 100 } });
+  const pages = await Promise.all(Array.from({ length: Math.max(0, first.data.totalPages - 1) }, (_, index) =>
+    api.get<PaginatedItems<T>>(path, { params: { page: index + 2, pageSize: 100 } }),
+  ));
+  return [ ...first.data.items, ...pages.flatMap((page) => page.data.items) ];
+}
 
 export type WorkflowNode = {
   nodeId: string;
@@ -38,12 +47,12 @@ export type Workflow = {
 };
 
 export function setAuthToken(token: string | null) {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
+  if (token) sessionStorage.setItem(TOKEN_KEY, token);
+  else sessionStorage.removeItem(TOKEN_KEY);
 }
 
 export function getAuthToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return sessionStorage.getItem(TOKEN_KEY);
 }
 
 const api = axios.create({ baseURL: BASE_URL });
@@ -69,7 +78,7 @@ api.interceptors.response.use(
 );
 
 // Route-specific helpers (one per backend route)
-export async function apiSignup(body: { username: string; password: string }): Promise<IdResponse> {
+export async function apiSignup(body: { username: string; password: string; invitationCode: string }): Promise<IdResponse> {
   const res = await api.post<IdResponse>("/signup", body);
   return res.data;
 }
@@ -94,8 +103,7 @@ export async function apiCreateCredential(provider: string, secret: Record<strin
 }
 
 export async function apiListCredentials(): Promise<Credential[]> {
-  const res = await api.get<Credential[]>("/credentials");
-  return res.data;
+  return fetchAllPages<Credential>("/credentials");
 }
 
 export async function apiRotateCredential(credentialId: string, provider: string, secret: Record<string, unknown>): Promise<{ id: string; provider: string }> {
@@ -147,8 +155,7 @@ export async function apiGetWorkflow(workflowId: string): Promise<Workflow> {
 }
 
 export async function apiListWorkflows(): Promise<Workflow[]> {
-  const res = await api.get<Workflow[]>("/workflows");
-  return res.data;
+  return fetchAllPages<Workflow>("/workflows");
 }
 
 export type ExecutionStatus = "pending" | "running" | "success" | "failure" | "cancelled";

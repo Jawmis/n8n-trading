@@ -8,23 +8,29 @@ export default function Auth() {
   const [mode, setMode] = useState<'signin' | 'signup'>(() => new URLSearchParams(location.search).get('mode') === 'signup' ? 'signup' : 'signin');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [invitationCode, setInvitationCode] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting) return;
     setError(null);
+    setSubmitting(true);
     try {
       if (mode === 'signin') {
         await apiSignin({ username, password });
       } else {
-        await apiSignup({ username, password });
+        await apiSignup({ username, password, invitationCode });
         await apiSignin({ username, password });
       }
       navigate('/dashboard');
     } catch (err: unknown) {
       const message = axios.isAxiosError<{ message?: string }>(err) ? err.response?.data?.message : undefined;
       setError(message ?? 'Something went wrong');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -49,13 +55,20 @@ export default function Auth() {
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          minLength={mode === 'signup' ? 12 : 1}
+          maxLength={256}
         />
+        {mode === 'signup' && <>
+          <p className="-mt-2 text-xs text-slate-500">Use at least 12 characters. New accounts require an invitation from the pilot operator.</p>
+          <input className="rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-teal-500" placeholder="Invitation code" value={invitationCode} onChange={(e) => setInvitationCode(e.target.value)} required maxLength={256} />
+        </>}
         {error && <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
-        <button type="submit" className="rounded-xl bg-slate-950 px-4 py-3 font-medium text-white transition hover:bg-slate-800">
-          {mode === 'signin' ? 'Sign In' : 'Sign Up'}
+        <button type="submit" disabled={submitting} className="rounded-xl bg-slate-950 px-4 py-3 font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60">
+          {submitting ? 'Please wait…' : mode === 'signin' ? 'Sign In' : 'Sign Up'}
         </button>
       </form>
       <button
+        disabled={submitting}
         className="mt-6 text-sm text-slate-500 underline underline-offset-4 hover:text-slate-950"
         onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
       >

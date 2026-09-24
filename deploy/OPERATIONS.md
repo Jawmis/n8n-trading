@@ -39,6 +39,36 @@ credential IDs, and publish a new version before enabling. Never infer broker
 ownership or reconstruct secrets from logs or backups. Keep all migrated
 workflows paused until their owners complete that review.
 
+## Private account onboarding and recovery
+
+The pilot is invite-only. Set `SIGNUP_INVITATION_CODE` in the deployment
+secret manager and share it through a separate trusted channel. Signup is
+closed when the value is absent. Signin and signup are limited to 10 requests
+per source IP in a 15 minute window; other API requests are limited to 600.
+Counters are stored in MongoDB so limits apply across API replicas. The API
+does not trust forwarded client IP headers by default. Configure
+`TRUST_PROXY_HOPS` only for a known proxy chain.
+
+Browser access tokens are held in `sessionStorage`, so closing the tab ends the
+browser session. They remain readable by same-origin JavaScript; deploy a
+strict content security policy and avoid untrusted scripts. API authentication
+uses bearer tokens, so CSRF protections are not needed unless the app moves to
+cookies. Expired or revoked tokens clear the session and return the user to
+sign in.
+
+For a verified recovery request, take a database backup, deliver a one-time
+password to the account owner over a separate trusted channel, and run the
+recovery command using secret-manager injected values:
+
+```sh
+cd apps/backend && MONGO_URL=... RECOVERY_USERNAME=... RECOVERY_PASSWORD=... bun run recover:account
+```
+
+The command hashes the new password and increments the account token version,
+revoking all existing sessions. Never put recovery values in shell history,
+logs, issue trackers, or chat; inject them through the deployment secret
+manager in a restricted maintenance session.
+
 ## Execution bounds and shutdown
 
 The executor caps one run at five minutes. Lighter REST requests use a 20

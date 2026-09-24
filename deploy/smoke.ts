@@ -15,7 +15,7 @@ async function request<T>(path: string, method = 'GET', body?: unknown): Promise
 async function main() {
   const ready = await request<{ status: string }>('/readyz');
   if (ready.status !== 'ready') throw new Error('API is not ready');
-  await request('/signup', 'POST', { username, password: 'smoke-test-password-123' });
+  await request('/signup', 'POST', { username, password: 'smoke-test-password-123', invitationCode: process.env.SIGNUP_INVITATION_CODE });
   const signIn = await request<{ token: string }>('/signin', 'POST', { username, password: 'smoke-test-password-123' });
   token = signIn.token;
   const status = await request<{ mode: string; ready: boolean }>('/trading/status');

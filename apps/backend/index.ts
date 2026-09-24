@@ -1,7 +1,7 @@
 import express from 'express';
 import type { ErrorRequestHandler } from 'express';
 import mongoose from 'mongoose';
-import { CredentialModel, ExecutionModel, NodesModel, UserModel, WorkflowAuditModel, WorkflowModel } from 'db/client';
+import { CredentialModel, ExecutionModel, NodesModel, RequestLimitModel, UserModel, WorkflowAuditModel, WorkflowModel } from 'db/client';
 import { decryptCredential, encryptCredential } from 'db/credentials';
 import jwt from "jsonwebtoken"; 
 import { SignupSchema,SigninSchema, CreateWorkflowSchema, UpdateWorkflowSchema, validateWorkflowGraph } from 'common/types';
@@ -10,8 +10,10 @@ import cors from 'cors';
 import { hashPassword, verifyPassword } from './password';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
+import { timingSafeEqual } from 'node:crypto';
 import { parsePagination } from './api-validation';
 import { workflowAccess, workflowRole, workflowSnapshot } from './workflow-access';
+import { createRateLimitMiddleware } from './rate-limit';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const MONGO_URL = process.env.MONGO_URL;
@@ -41,6 +43,7 @@ function lighterCredentialError(secret: Record<string, unknown>) {
 }
 
 const app = express();
+app.set("trust proxy", Number.isInteger(Number(process.env.TRUST_PROXY_HOPS)) && Number(process.env.TRUST_PROXY_HOPS) > 0 ? Number(process.env.TRUST_PROXY_HOPS) : false);
 
 const metrics = {
     requests: 0,
@@ -70,6 +73,7 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: "1mb" }));
+app.use(createRateLimitMiddleware());
 
 app.use(cors({
     origin: process.env.CLIENT_URL || "http://localhost:5173",
@@ -110,6 +114,13 @@ app.post("/signup", async (req, res) => {
         })
         return;
     }
+    const invitationCode = process.env.SIGNUP_INVITATION_CODE;
+    const suppliedCode = Buffer.from(data.invitationCode);
+    const configuredCode = Buffer.from(invitationCode ?? "");
+    if (!invitationCode || suppliedCode.length !== configuredCode.length || !timingSafeEqual(suppliedCode, configuredCode)) {
+        res.status(403).json({ message: "Signup is invite-only. Use a valid invitation code." });
+        return;
+    }
     try {
         const user = await UserModel.create({
             username: data.username,
@@ -120,8 +131,8 @@ app.post("/signup", async (req, res) => {
             id: user._id,
         })
     } catch (e) {
-        res.status(409).json({
-            message : "Username already exists"
+        res.status(400).json({
+            message : "Unable to create account with those details"
         })
     }
 });
@@ -305,11 +316,17 @@ app.post("/workflow/:workflowId/execute", authMiddleware, async (req, res) => {
 });
 
 app.get("/workflows", authMiddleware, async (req, res) => {
-    const workflows = await WorkflowModel.find(workflowAccess(req.userId));
-    res.json(workflows.map((workflow) => {
+    const page = parsePagination(typeof req.query.page === "string" ? req.query.page : undefined, typeof req.query.pageSize === "string" ? req.query.pageSize : undefined);
+    if (!page) { res.status(400).json({ message: "Invalid pagination parameters" }); return; }
+    const filter = workflowAccess(req.userId);
+    const [workflows, total] = await Promise.all([
+        WorkflowModel.find(filter).sort({ _id: 1 }).skip((page.page - 1) * page.pageSize).limit(page.pageSize),
+        WorkflowModel.countDocuments(filter),
+    ]);
+    res.json({ items: workflows.map((workflow) => {
         const value = workflow.toObject();
         return { ...value, role: workflowRole(workflow, req.userId), nodes: value.nodes.map(({ credentials: _credentials, ...node }) => node) };
-    }));
+    }), page: page.page, pageSize: page.pageSize, total, totalPages: Math.ceil(total / page.pageSize) });
 });
 
 app.get("/workflow/:workflowId", authMiddleware, async (req, res) => {
@@ -482,8 +499,14 @@ app.put("/credentials/:credentialId", authMiddleware, async (req, res) => {
 });
 
 app.get("/credentials", authMiddleware, async (req, res) => {
-    const credentials = await CredentialModel.find({ userId: req.userId }).select("provider createdAt updatedAt revokedAt").sort({ createdAt: -1 });
-    res.json(credentials);
+    const page = parsePagination(typeof req.query.page === "string" ? req.query.page : undefined, typeof req.query.pageSize === "string" ? req.query.pageSize : undefined);
+    if (!page) { res.status(400).json({ message: "Invalid pagination parameters" }); return; }
+    const filter = { userId: req.userId };
+    const [credentials, total] = await Promise.all([
+        CredentialModel.find(filter).select("provider createdAt updatedAt revokedAt").sort({ createdAt: -1, _id: 1 }).skip((page.page - 1) * page.pageSize).limit(page.pageSize),
+        CredentialModel.countDocuments(filter),
+    ]);
+    res.json({ items: credentials, page: page.page, pageSize: page.pageSize, total, totalPages: Math.ceil(total / page.pageSize) });
 });
 
 app.post("/credentials/:credentialId/test", authMiddleware, async (req, res) => {
@@ -721,6 +744,7 @@ export async function startServer() {
         throw new Error("MONGO_URL, JWT_SECRET, and CREDENTIAL_ENCRYPTION_KEY are required");
     }
     await mongoose.connect(MONGO_URL);
+    await RequestLimitModel.init();
     server = app.listen(process.env.PORT || 3000);
     return server;
 }
