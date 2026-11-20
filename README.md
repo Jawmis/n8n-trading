@@ -1,209 +1,45 @@
-# N8N Trading Automation Platform
+# n8n-trading
 
-Visual crypto-trading workflow automation built with React Flow, Express,
-MongoDB/Mongoose, and a detached Bun executor service.
+A visual trading-workflow builder with a React Flow editor, an Express API, MongoDB persistence, and a detached Bun executor. Workflows connect timer triggers, conditions, risk controls, and broker actions; the UI shows execution history and node results.
 
-## Project progress
+The default deployment runs **paper mode** with fixed illustrative prices. It does not send broker orders. There is no public live demo.
 
-Measured from the first repository commit (`4684a8a`) through the current
-implementation (`23a18f4`):
+## Architecture
 
-| Metric | First commit | Current | Change |
-| --- | ---: | ---: | ---: |
-| TypeScript files in `apps/` and `packages/` | 7 | 35 | +400% |
-| TypeScript lines in `apps/` and `packages/` | 324 | 2,065 | +537% |
-| Git commits | 1 | 18 | +17 |
+| Path | Responsibility |
+| --- | --- |
+| `apps/client` | React 19 / TypeScript workflow editor and execution history |
+| `apps/backend` | Express API for auth, workflow validation, publishing, credentials, and execution requests |
+| `apps/executor` | Bun service that polls for jobs, executes graphs, and records results |
+| `packages/common` | Typed workflow graph and validation contracts |
+| `packages/db` | Mongoose models and encrypted credential storage |
+| `deploy` | Docker Compose paper-mode deployment |
 
-The implementation now includes the visual workflow builder, trigger and task
-drawers, workflow persistence, authenticated execution requests, execution
-history, recursive detached execution, and an injectable Lighter action handler.
+The graph validator rejects cycles and invalid connections. The executor tracks incoming dependencies and runs a node after its parents complete. **Ready nodes execute sequentially within one workflow**; independent branches are not parallelized. Up to ten separate jobs may be active in the polling service. Execution state and node results are persisted in MongoDB, with leases and timeouts to stop stale work.
 
-Validation currently passes with:
+## Run the paper-mode stack
+
+Set `JWT_SECRET` and `CREDENTIAL_ENCRYPTION_KEY` before running Docker Compose. The encryption key must be a base64-encoded 32-byte value. For example, generate one with `openssl rand -base64 32` and keep it outside the repository.
+
+```sh
+JWT_SECRET=your-long-random-secret \
+CREDENTIAL_ENCRYPTION_KEY=your-base64-key \
+docker compose -f deploy/docker-compose.yml up --build
+```
+
+Open `http://localhost` for the client. The API listens on `http://localhost:3000`; the executor health endpoint uses port 3001. The Compose file pins paper mode and starts MongoDB, API, executor, and client together. For local development without Docker, install with `bun install`, then run the client, backend, and executor workspace scripts with a MongoDB instance and the required environment variables.
+
+## Safety and current limits
+
+- Paper mode uses fixed demo reference prices (BTC 100000, ETH 3000, SOL 150). They are not market data or evidence of trading performance.
+- Live trading is separately gated by `TRADING_MODE=live`, `LIVE_TRADING_ENABLED=true`, credentials, and risk limits. See [`apps/executor/README.md`](apps/executor/README.md) before considering it.
+- Price-trigger workflows need an injected market-data feed; they are unavailable by default.
+- The project does not claim hours saved, faster branches, or production latency. Such claims require measured production data and a reproducible benchmark.
+
+## Engineering checks
 
 ```sh
 bun run build --filter=client
 bun run check-types
+bun run test
 ```
-
-These are delivery and maintainability metrics, not a claimed runtime-speed
-benchmark. Runtime performance improvements should be measured separately with
-representative workflow and database benchmarks.
-
-## Estimated automation impact
-
-These figures are scenario-based estimates until production execution history
-is available:
-
-| Scenario | Calculation | Estimated impact |
-| --- | --- | ---: |
-| Manual trade check replaced by a timer workflow | 5 min/check × 12 checks/day × 22 workdays | 22 hours saved/month |
-| Three independent action branches executed in parallel | 9 sec sequential ÷ 4 sec parallel | 56% lower elapsed execution time |
-| Workflow launch overhead | 2 sec polling interval ÷ 60 | Up to 2 sec trigger wait |
-
-For measured results after deployment:
-
-```text
-time saved = (manual execution time - automated execution time) × successful runs
-```
-
-The estimates assume a five-minute manual check, twelve checks per workday,
-twenty-two workdays per month, and branch durations of 3, 4, and 2 seconds.
-They are projections, not measured performance claims.
-
-This Turborepo starter is maintained by the Turborepo core team.
-
-## Using this example
-
-Run the following command:
-
-```sh
-npx create-turbo@latest
-```
-
-## What's inside?
-
-This Turborepo includes the following packages/apps:
-
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo build
-bun dlx turbo build
-bun exec turbo build
-```
-
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo build --filter=docs
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo build --filter=docs
-bun exec turbo build --filter=docs
-bun exec turbo build --filter=docs
-```
-
-### Develop
-
-To develop all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo dev
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo dev
-bun exec turbo dev
-bun exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-bun exec turbo dev --filter=web
-bun exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-bun exec turbo login
-bun exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-bun exec turbo link
-bun exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
