@@ -11,7 +11,7 @@
     "test:integration": "RUN_INTEGRATION_TESTS=1 bun test ./ownership.integration.ts && RUN_INTEGRATION_TESTS=1 bun test ./migrate-private-mvp.integration.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "1.4.5"
   },
   "peerDependencies": {
     "typescript": "^5"
