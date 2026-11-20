@@ -8,7 +8,7 @@
     "./credentials" : "./credentials.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "1.4.5"
   },
   "peerDependencies": {
     "typescript": "^5"
