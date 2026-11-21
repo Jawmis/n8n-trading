@@ -10,7 +10,7 @@ export default defineConfig({
   timeout: 60_000,
   use: { baseURL: 'http://127.0.0.1:4173', browserName: 'chromium' },
   webServer: [
-    { command: 'bun index.ts', cwd: '../backend', url: 'http://127.0.0.1:3000/readyz', env: { MONGO_URL: mongoUrl, JWT_SECRET: secret, CREDENTIAL_ENCRYPTION_KEY: encryptionKey, CLIENT_URL: 'http://127.0.0.1:4173', ...trading }, reuseExistingServer: false },
+    { command: 'bun index.ts', cwd: '../backend', url: 'http://127.0.0.1:3000/readyz', env: { MONGO_URL: mongoUrl, JWT_SECRET: secret, CREDENTIAL_ENCRYPTION_KEY: encryptionKey, CLIENT_URL: 'http://127.0.0.1:4173', SIGNUP_INVITATION_CODE: 'fullstack-test-invitation', ...trading }, reuseExistingServer: false },
     { command: 'bun index.ts', cwd: '../executor', url: 'http://127.0.0.1:3001/readyz', env: { MONGO_URL: mongoUrl, CREDENTIAL_ENCRYPTION_KEY: encryptionKey, ...trading }, reuseExistingServer: false },
     { command: 'bun run dev --host 127.0.0.1 --port 4173', url: 'http://127.0.0.1:4173', reuseExistingServer: false },
   ],

@@ -38,9 +38,12 @@ export function validateTradeRisk(order: LighterOrder, marketPrice: number, curr
   const maxLeverage = numberEnv("MAX_ORDER_LEVERAGE", 1);
   const maxSlippageBps = numberEnv("MAX_ORDER_SLIPPAGE_BPS", 0);
   const maxPositionNotional = numberEnv("MAX_POSITION_NOTIONAL", 0);
+  const maxOrdersPerMinute = numberEnv("MAX_ORDERS_PER_MINUTE", 0);
 
   if (killSwitch) reject("KILL_SWITCH", "Trading kill switch is enabled");
   if (mode === "live" && !liveTradingEnabled) reject("LIVE_TRADING_DISABLED", "Live trading is disabled");
+  if (mode === "live" && maxPositionNotional <= 0) reject("POSITION_LIMIT_UNCONFIGURED", "Live trading requires a positive MAX_POSITION_NOTIONAL");
+  if (mode === "live" && maxOrdersPerMinute <= 0) reject("ORDER_RATE_UNCONFIGURED", "Live trading requires a positive MAX_ORDERS_PER_MINUTE");
   if (!allowedAssets.has(order.asset)) reject("ASSET_NOT_ALLOWED", `Trading asset is not allowed: ${order.asset}`, { asset: order.asset });
   if (order.leverage !== undefined && (!Number.isFinite(order.leverage) || order.leverage <= 0 || order.leverage > maxLeverage)) {
     reject("LEVERAGE_LIMIT", "Order leverage exceeds the configured risk limit", { leverage: order.leverage, maxLeverage });
@@ -60,5 +63,5 @@ export function validateTradeRisk(order: LighterOrder, marketPrice: number, curr
       reject("SLIPPAGE_LIMIT", "Order price exceeds the configured slippage limit", { price: order.price, marketPrice, slippageBps, maxSlippageBps });
     }
   }
-  return { mode, maxQuantity, maxNotional, maxLeverage, maxSlippageBps, maxPositionNotional };
+  return { mode, maxQuantity, maxNotional, maxLeverage, maxSlippageBps, maxPositionNotional, maxOrdersPerMinute };
 }

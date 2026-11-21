@@ -11,6 +11,7 @@ beforeEach(() => {
   delete process.env.MAX_ORDER_LEVERAGE;
   delete process.env.MAX_ORDER_SLIPPAGE_BPS;
   delete process.env.MAX_POSITION_NOTIONAL;
+  delete process.env.MAX_ORDERS_PER_MINUTE;
   process.env.MAX_ORDER_QUANTITY = "2";
   process.env.MAX_ORDER_NOTIONAL = "100000";
   process.env.ALLOWED_TRADING_ASSETS = "BTC,ETH";
@@ -26,6 +27,13 @@ describe("trade risk policy", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(TradeRiskRejection);
     }
+  });
+  test("requires explicit exposure and order-frequency limits for live trading", () => {
+    process.env.TRADING_MODE = "live";
+    process.env.LIVE_TRADING_ENABLED = "true";
+    expect(() => validateTradeRisk(order, 100, 0)).toThrow("MAX_POSITION_NOTIONAL");
+    process.env.MAX_POSITION_NOTIONAL = "1000";
+    expect(() => validateTradeRisk(order, 100, 0)).toThrow("MAX_ORDERS_PER_MINUTE");
   });
   test("rejects the kill switch, disallowed assets, quantity, and notional", () => {
     process.env.TRADING_KILL_SWITCH = "true";

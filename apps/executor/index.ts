@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { ExecutionModel, WorkflowModel } from "db/client";
+import { ExecutionModel, RequestLimitModel, RuntimeControlModel, WorkflowModel } from "db/client";
 import { executeWorkflow, type WorkflowLike } from "./execute";
 import { crossedThreshold, freshPrice, type PriceDirection, type PriceQuote } from "./price";
 import { SUPPORTED_ASSETS } from "common/types";
@@ -104,16 +104,29 @@ async function enqueueTimerJobs(now: number) {
 }
 
 async function claimAndStartJob(now: number): Promise<boolean> {
+  const expiredLease = { status: "running" as const, leaseUntil: { $lte: new Date(now) } };
+  const uncertainStatuses = ["submitting", "uncertain"] as const;
   await ExecutionModel.updateMany(
-    {
-      status: "running",
-      leaseUntil: { $lte: new Date(now) },
-    },
+    { ...expiredLease, results: { $elemMatch: { status: { $in: uncertainStatuses } } } },
     {
       $set: {
         status: "failure",
         endTime: new Date(now),
-        error: "Worker lease expired. Reconcile broker orders before retrying.",
+        error: "Worker lease expired with an uncertain broker order. Reconcile before another run.",
+        "results.$[order].status": "uncertain",
+        "results.$[order].error": "Broker outcome is uncertain. Reconcile this order before retrying.",
+      },
+      $unset: { leaseUntil: 1 },
+    },
+    { arrayFilters: [{ "order.status": "submitting" }] },
+  );
+  await ExecutionModel.updateMany(
+    { ...expiredLease, results: { $not: { $elemMatch: { status: { $in: uncertainStatuses } } } } },
+    {
+      $set: {
+        status: "failure",
+        endTime: new Date(now),
+        error: "Worker lease expired before an uncertain broker submission.",
         leaseUntil: null,
       },
       $unset: { queueKey: 1, activeKey: 1 },
@@ -156,6 +169,7 @@ export async function startPolling() {
   const mongoUrl = process.env.MONGO_URL;
   if (!mongoUrl) throw new Error("MONGO_URL is required");
   await mongoose.connect(mongoUrl);
+  await Promise.all([RequestLimitModel.init(), RuntimeControlModel.init()]);
   console.log("[executor] connected to MongoDB");
   startHealthServer();
   const stop = () => { stopping = true; };

@@ -143,7 +143,8 @@ export const ActionSheet = ({
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-2">
-                            <div className="text-sm font-medium">Limit price (optional)</div>
+                            <div className="text-sm font-medium">Slippage guard price (optional)</div>
+                            <p className="text-xs text-muted-foreground">Market order guard; this does not place a limit order.</p>
                             <Input type="number" min="0" value={metadeta.price ?? ""} onChange={(e) => setMetadata((current) => ({ ...current, price: e.target.value ? Number(e.target.value) : undefined }))} />
                         </div>
                         <div className="space-y-2">

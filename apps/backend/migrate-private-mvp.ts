@@ -1,28 +1,55 @@
 import mongoose from 'mongoose';
 import { validateWorkflowGraph } from 'common/types';
 
-type Counts = { legacyWorkflows: number; validGraphs: number; invalidGraphs: number; legacyJobs: number; migratedWorkflows: number; failedJobs: number };
+type Counts = { legacyWorkflows: number; validGraphs: number; invalidGraphs: number; invalidCredentials: number; legacyJobs: number; migratedWorkflows: number; failedJobs: number };
 
 export async function migratePrivateMvp(apply = false): Promise<Counts> {
   const url = process.env.MONGO_URL;
   if (!url) throw new Error('MONGO_URL is required');
   if (apply && process.env.MIGRATION_BACKUP_CONFIRMED !== 'yes') throw new Error('Set MIGRATION_BACKUP_CONFIRMED=yes after verifying a restorable backup');
   await mongoose.connect(url);
-  const counts: Counts = { legacyWorkflows: 0, validGraphs: 0, invalidGraphs: 0, legacyJobs: 0, migratedWorkflows: 0, failedJobs: 0 };
+  const counts: Counts = { legacyWorkflows: 0, validGraphs: 0, invalidGraphs: 0, invalidCredentials: 0, legacyJobs: 0, migratedWorkflows: 0, failedJobs: 0 };
   try {
     const workflows = mongoose.connection.db!.collection('workflows');
     const jobs = mongoose.connection.db!.collection('executions');
+    const credentials = mongoose.connection.db!.collection('credentials');
     const legacy = workflows.find({ $or: [{ revision: { $exists: false } }, { state: { $exists: false } }, { enabled: true, published: { $exists: false } }] });
     for await (const workflow of legacy) {
       counts.legacyWorkflows++;
-      const nodes = (workflow.nodes ?? []).map(({ credentials: _credentials, ...node }: Record<string, unknown>) => node);
+      const nodes = (workflow.nodes ?? []).map(({ credentials: _credentials, credentialId, ...node }: Record<string, unknown>) => ({
+        ...node,
+        ...(credentialId !== undefined ? { credentialId: String(credentialId) } : {}),
+      }));
       const graph = validateWorkflowGraph({ nodes, edges: workflow.edges ?? [] });
+      let credentialsValid = true;
+      for (const node of (workflow.nodes ?? []) as Array<Record<string, unknown>>) {
+        const credentialId = node.credentialId;
+        const hasInlineCredential = node.credentials !== undefined;
+        if (hasInlineCredential) credentialsValid = false;
+        if (credentialId === undefined) continue;
+        if (typeof credentialId !== 'string' && !(credentialId instanceof mongoose.Types.ObjectId)) {
+          credentialsValid = false;
+          continue;
+        }
+        if (!mongoose.isValidObjectId(credentialId)) {
+          credentialsValid = false;
+          continue;
+        }
+        const credential = await credentials.findOne({
+          _id: new mongoose.Types.ObjectId(credentialId),
+          userId: workflow.userId,
+          provider: 'lighter',
+          revokedAt: null,
+        });
+        if (!credential) credentialsValid = false;
+      }
       if (graph.success) counts.validGraphs++;
       else counts.invalidGraphs++;
+      if (!credentialsValid) counts.invalidCredentials++;
       if (!apply) continue;
       const result = await workflows.updateOne({ _id: workflow._id, $or: [{ revision: { $exists: false } }, { state: { $exists: false } }, { enabled: true, published: { $exists: false } }] }, {
         $set: { revision: workflow.revision ?? 0, state: 'draft', enabled: false, members: workflow.members ?? [] },
-        $unset: { runRequestedAt: 1 },
+        $unset: { runRequestedAt: 1, published: 1, 'nodes.$[].credentials': 1 },
       });
       counts.migratedWorkflows += result.modifiedCount;
     }

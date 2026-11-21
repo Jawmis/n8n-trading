@@ -203,6 +203,9 @@ const ExecutionSchema = new Schema({
     claimedAt: {
         type: Date
     },
+    cancelRequestedAt: {
+        type: Date
+    },
     leaseUntil: {
         type: Date
     },
@@ -228,9 +231,37 @@ ExecutionSchema.index({ workflowId: 1, startTime: -1 });
 ExecutionSchema.index({ status: 1, leaseUntil: 1 });
 ExecutionSchema.index({ activeKey: 1 }, { unique: true, partialFilterExpression: { activeKey: { $type: "string" } } });
 
+const RequestLimitSchema = new Schema({
+    key: { type: String, required: true },
+    windowStart: { type: Date, required: true },
+    expiresAt: { type: Date, required: true },
+    count: { type: Number, required: true, default: 0 },
+});
+RequestLimitSchema.index({ key: 1, windowStart: 1 }, { unique: true });
+RequestLimitSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+const RuntimeControlSchema = new Schema({
+    _id: { type: String, default: "trading" },
+    killSwitch: { type: Boolean, required: true, default: false },
+    changedBy: { type: String, required: true },
+    reason: { type: String, maxlength: 200 },
+}, { timestamps: true });
+
+const RuntimeAuditSchema = new Schema({
+    action: { type: String, required: true },
+    operator: { type: String, required: true },
+    enabled: { type: Boolean, required: true },
+    succeeded: { type: Boolean, required: true, default: false },
+    reason: { type: String, maxlength: 200 },
+}, { timestamps: true });
+RuntimeAuditSchema.index({ createdAt: -1 });
+
 export const UserModel = mongoose.model("Users", UserSchema);
 export const CredentialModel = mongoose.model("Credentials", CredentialSchema);
 export const WorkflowModel = mongoose.model("Workflows", WorkflowSchema);
 export const WorkflowAuditModel = mongoose.model("WorkflowAudits", WorkflowAuditSchema);
 export const NodesModel = mongoose.model("Nodes", NodesSchema);
 export const ExecutionModel = mongoose.model("Executions", ExecutionSchema);
+export const RequestLimitModel = mongoose.model("RequestLimits", RequestLimitSchema);
+export const RuntimeControlModel = mongoose.model("RuntimeControls", RuntimeControlSchema);
+export const RuntimeAuditModel = mongoose.model("RuntimeAudits", RuntimeAuditSchema);

@@ -1,7 +1,7 @@
 import express from 'express';
 import type { ErrorRequestHandler } from 'express';
 import mongoose from 'mongoose';
-import { CredentialModel, ExecutionModel, NodesModel, UserModel, WorkflowAuditModel, WorkflowModel } from 'db/client';
+import { CredentialModel, ExecutionModel, NodesModel, RequestLimitModel, RuntimeAuditModel, RuntimeControlModel, UserModel, WorkflowAuditModel, WorkflowModel } from 'db/client';
 import { decryptCredential, encryptCredential } from 'db/credentials';
 import jwt from "jsonwebtoken"; 
 import { SignupSchema,SigninSchema, CreateWorkflowSchema, UpdateWorkflowSchema, validateWorkflowGraph } from 'common/types';
@@ -10,8 +10,10 @@ import cors from 'cors';
 import { hashPassword, verifyPassword } from './password';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
+import { timingSafeEqual } from 'node:crypto';
 import { parsePagination } from './api-validation';
 import { workflowAccess, workflowRole, workflowSnapshot } from './workflow-access';
+import { createRateLimitMiddleware } from './rate-limit';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const MONGO_URL = process.env.MONGO_URL;
@@ -41,6 +43,7 @@ function lighterCredentialError(secret: Record<string, unknown>) {
 }
 
 const app = express();
+app.set("trust proxy", Number.isInteger(Number(process.env.TRUST_PROXY_HOPS)) && Number(process.env.TRUST_PROXY_HOPS) > 0 ? Number(process.env.TRUST_PROXY_HOPS) : false);
 
 const metrics = {
     requests: 0,
@@ -70,6 +73,7 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: "1mb" }));
+app.use(createRateLimitMiddleware());
 
 app.use(cors({
     origin: process.env.CLIENT_URL || "http://localhost:5173",
@@ -98,8 +102,34 @@ app.get("/metrics", (_req, res) => {
 });
 app.get("/trading/status", authMiddleware, (_req, res) => {
     const paper = process.env.TRADING_MODE !== "live";
-    const limitsReady = Number(process.env.MAX_ORDER_QUANTITY) > 0 && Number(process.env.MAX_ORDER_NOTIONAL) > 0;
-    res.json({ mode: paper ? "paper" : "live", priceSource: paper ? "fixed-demo-reference" : "broker", killSwitch: process.env.TRADING_KILL_SWITCH === "true", ready: limitsReady && process.env.TRADING_KILL_SWITCH !== "true" && (paper || process.env.LIVE_TRADING_ENABLED === "true") });
+    const baseLimitsReady = Number(process.env.MAX_ORDER_QUANTITY) > 0 && Number(process.env.MAX_ORDER_NOTIONAL) > 0;
+    void RuntimeControlModel.findById("trading").select("killSwitch").lean().then((control) => {
+        const killSwitch = process.env.TRADING_KILL_SWITCH === "true" || control?.killSwitch === true;
+        const limitsReady = baseLimitsReady && (paper || (Number(process.env.MAX_POSITION_NOTIONAL) > 0 && Number(process.env.MAX_ORDERS_PER_MINUTE) > 0));
+        res.json({ mode: paper ? "paper" : "live", priceSource: paper ? "fixed-demo-reference" : "broker", killSwitch, ready: limitsReady && !killSwitch && (paper || process.env.LIVE_TRADING_ENABLED === "true") });
+    }).catch(() => res.status(503).json({ message: "Trading status is temporarily unavailable" }));
+});
+
+app.post("/operator/trading/kill-switch", async (req, res) => {
+    const configuredToken = process.env.TRADING_OPERATOR_TOKEN;
+    const suppliedToken = req.header("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+    const suppliedBytes = Buffer.from(suppliedToken);
+    const configuredBytes = Buffer.from(configuredToken ?? "");
+    if (!configuredToken) { res.status(503).json({ message: "Operator controls are not configured" }); return; }
+    if (suppliedBytes.length !== configuredBytes.length || !timingSafeEqual(suppliedBytes, configuredBytes)) {
+        res.status(401).json({ message: "Operator authentication required" });
+        return;
+    }
+    const parsed = z.object({ enabled: z.boolean(), reason: z.string().trim().min(1).max(200) }).strict().safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ message: "Provide enabled and an audit reason" }); return; }
+    const audit = await RuntimeAuditModel.create({ action: "kill_switch.change", operator: "operator-token", enabled: parsed.data.enabled, succeeded: false, reason: parsed.data.reason });
+    const control = await RuntimeControlModel.findOneAndUpdate(
+        { _id: "trading" },
+        { $set: { killSwitch: parsed.data.enabled, changedBy: "operator-token", reason: parsed.data.reason } },
+        { upsert: true, new: true, runValidators: true },
+    );
+    await RuntimeAuditModel.updateOne({ _id: audit._id }, { $set: { succeeded: true, action: parsed.data.enabled ? "kill_switch.enabled" : "kill_switch.disabled" } });
+    res.json({ killSwitch: control.killSwitch, updatedAt: control.updatedAt });
 });
 
 app.post("/signup", async (req, res) => {
@@ -108,6 +138,13 @@ app.post("/signup", async (req, res) => {
         res.status(400).json({
             message : "Incorrect Inputs"
         })
+        return;
+    }
+    const invitationCode = process.env.SIGNUP_INVITATION_CODE;
+    const suppliedCode = Buffer.from(data.invitationCode);
+    const configuredCode = Buffer.from(invitationCode ?? "");
+    if (!invitationCode || suppliedCode.length !== configuredCode.length || !timingSafeEqual(suppliedCode, configuredCode)) {
+        res.status(403).json({ message: "Signup is invite-only. Use a valid invitation code." });
         return;
     }
     try {
@@ -120,8 +157,8 @@ app.post("/signup", async (req, res) => {
             id: user._id,
         })
     } catch (e) {
-        res.status(409).json({
-            message : "Username already exists"
+        res.status(400).json({
+            message : "Unable to create account with those details"
         })
     }
 });
@@ -305,11 +342,17 @@ app.post("/workflow/:workflowId/execute", authMiddleware, async (req, res) => {
 });
 
 app.get("/workflows", authMiddleware, async (req, res) => {
-    const workflows = await WorkflowModel.find(workflowAccess(req.userId));
-    res.json(workflows.map((workflow) => {
+    const page = parsePagination(typeof req.query.page === "string" ? req.query.page : undefined, typeof req.query.pageSize === "string" ? req.query.pageSize : undefined);
+    if (!page) { res.status(400).json({ message: "Invalid pagination parameters" }); return; }
+    const filter = workflowAccess(req.userId);
+    const [workflows, total] = await Promise.all([
+        WorkflowModel.find(filter).sort({ _id: 1 }).skip((page.page - 1) * page.pageSize).limit(page.pageSize),
+        WorkflowModel.countDocuments(filter),
+    ]);
+    res.json({ items: workflows.map((workflow) => {
         const value = workflow.toObject();
         return { ...value, role: workflowRole(workflow, req.userId), nodes: value.nodes.map(({ credentials: _credentials, ...node }) => node) };
-    }));
+    }), page: page.page, pageSize: page.pageSize, total, totalPages: Math.ceil(total / page.pageSize) });
 });
 
 app.get("/workflow/:workflowId", authMiddleware, async (req, res) => {
@@ -410,6 +453,15 @@ app.delete("/workflow/:workflowId", authMiddleware, async (req, res) => {
         res.status(404).json({ message: "Workflow not found" });
         return;
     }
+    const ownedWorkflow = await WorkflowModel.exists({ _id: req.params.workflowId, userId: req.userId });
+    if (!ownedWorkflow) {
+        res.status(404).json({ message: "Workflow not found" });
+        return;
+    }
+    if (await ExecutionModel.exists({ workflowId: req.params.workflowId, activeKey: { $type: "string" } })) {
+        res.status(409).json({ message: "Resolve or stop the active execution before deleting this workflow" });
+        return;
+    }
     const deleted = await WorkflowModel.findOneAndDelete({ _id: req.params.workflowId, userId: req.userId });
     if (!deleted) {
         res.status(404).json({ message: "Workflow not found" });
@@ -473,8 +525,14 @@ app.put("/credentials/:credentialId", authMiddleware, async (req, res) => {
 });
 
 app.get("/credentials", authMiddleware, async (req, res) => {
-    const credentials = await CredentialModel.find({ userId: req.userId }).select("provider createdAt updatedAt revokedAt").sort({ createdAt: -1 });
-    res.json(credentials);
+    const page = parsePagination(typeof req.query.page === "string" ? req.query.page : undefined, typeof req.query.pageSize === "string" ? req.query.pageSize : undefined);
+    if (!page) { res.status(400).json({ message: "Invalid pagination parameters" }); return; }
+    const filter = { userId: req.userId };
+    const [credentials, total] = await Promise.all([
+        CredentialModel.find(filter).select("provider createdAt updatedAt revokedAt").sort({ createdAt: -1, _id: 1 }).skip((page.page - 1) * page.pageSize).limit(page.pageSize),
+        CredentialModel.countDocuments(filter),
+    ]);
+    res.json({ items: credentials, page: page.page, pageSize: page.pageSize, total, totalPages: Math.ceil(total / page.pageSize) });
 });
 
 app.post("/credentials/:credentialId/test", authMiddleware, async (req, res) => {
@@ -603,17 +661,27 @@ app.post("/workflow/executions/:executionId/cancel", authMiddleware, async (req,
         res.status(404).json({ message: "Execution not found" });
         return;
     }
-    const updated = await ExecutionModel.findOneAndUpdate(
-        { _id: execution._id, status: { $in: ["pending", "running"] } },
-        { $set: { status: "cancelled", endTime: new Date(), error: "Cancelled by user", leaseUntil: null }, $unset: { queueKey: 1, activeKey: 1 } },
+    const pending = await ExecutionModel.findOneAndUpdate(
+        { _id: execution._id, status: "pending" },
+        { $set: { status: "cancelled", endTime: new Date(), error: "Cancelled before execution started", leaseUntil: null }, $unset: { queueKey: 1, activeKey: 1 } },
         { returnDocument: "after" },
     );
-    if (!updated) {
+    if (pending) {
+        await recordWorkflowAudit(req.userId, execution.workflowId, "execution.cancelled", { executionId: execution._id.toString(), phase: "pending" });
+        res.json({ id: pending._id, status: pending.status });
+        return;
+    }
+    const running = await ExecutionModel.findOneAndUpdate(
+        { _id: execution._id, status: "running" },
+        { $set: { cancelRequestedAt: new Date() } },
+        { returnDocument: "after" },
+    );
+    if (!running) {
         res.status(409).json({ message: "Execution is already complete" });
         return;
     }
-    await recordWorkflowAudit(req.userId, execution.workflowId, "execution.cancelled", { executionId: execution._id.toString() });
-    res.json({ id: updated._id, status: updated.status });
+    await recordWorkflowAudit(req.userId, execution.workflowId, "execution.cancel_requested", { executionId: execution._id.toString(), phase: "running" });
+    res.json({ id: running._id, status: running.status, cancellationRequested: true });
 });
 
 app.post("/workflow/executions/:executionId/retry", authMiddleware, async (req, res) => {
@@ -630,12 +698,51 @@ app.post("/workflow/executions/:executionId/retry", authMiddleware, async (req, 
         res.status(409).json({ message: "Only failed executions can be retried" });
         return;
     }
+    if (Array.isArray(execution.results) && execution.results.some((result) => result && typeof result === "object" && ["submitting", "uncertain"].includes(String((result as { status?: unknown }).status)))) {
+        res.status(409).json({ message: "Execution has an uncertain broker order outcome; reconcile it before retrying" });
+        return;
+    }
     const workflow = await WorkflowModel.findOne({ _id: execution.workflowId, userId: req.userId, enabled: true });
     if (!workflow || !execution.snapshot) { res.status(409).json({ message: "Retry requires an enabled workflow and a saved execution version" }); return; }
     if (process.env.TRADING_MODE === "live") { res.status(409).json({ message: "Automatic retry is unavailable for live trading until broker orders are reconciled" }); return; }
     const retry = await ExecutionModel.create({ workflowId: execution.workflowId, kind: execution.kind, status: "pending", queueKey: `${execution.workflowId}:manual`, activeKey: execution.workflowId.toString(), snapshot: execution.snapshot, workflowRevision: execution.workflowRevision });
     await recordWorkflowAudit(req.userId, execution.workflowId, "execution.retried", { executionId: execution._id.toString(), retryId: retry._id.toString() });
     res.status(202).json({ id: retry._id, status: retry.status });
+});
+
+app.post("/workflow/executions/:executionId/reconcile", authMiddleware, async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.executionId)) { res.status(404).json({ message: "Execution not found" }); return; }
+    const parsed = z.object({
+        clientOrderIndex: z.number().int().positive().safe(),
+        outcome: z.enum(["accepted", "rejected", "not_found"]),
+        note: z.string().trim().max(500).optional(),
+    }).strict().safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ message: "Provide the verified broker outcome and client order index" }); return; }
+    const execution = await ExecutionModel.findById(req.params.executionId);
+    if (!execution || !(await WorkflowModel.exists({ _id: execution.workflowId, userId: req.userId }))) {
+        res.status(404).json({ message: "Execution not found" });
+        return;
+    }
+    if (!["failure", "cancelled"].includes(execution.status ?? "")) {
+        res.status(409).json({ message: "Only a stopped execution can be reconciled" });
+        return;
+    }
+    const orderResult = Array.isArray(execution.results)
+        ? execution.results.find((result) => result && typeof result === "object" && (result as { clientOrderIndex?: unknown }).clientOrderIndex === parsed.data.clientOrderIndex && ["submitting", "uncertain"].includes(String((result as { status?: unknown }).status))) as Record<string, unknown> | undefined
+        : undefined;
+    if (!orderResult) { res.status(409).json({ message: "No unresolved order intent has that client order index" }); return; }
+    const reconciliation = { outcome: parsed.data.outcome, note: parsed.data.note, by: req.userId, at: new Date() };
+    const results = (execution.results as Array<Record<string, unknown>>).map((result) => result.clientOrderIndex === parsed.data.clientOrderIndex
+        ? { ...result, status: "reconciled", error: "", reconciliation }
+        : result);
+    const updated = await ExecutionModel.findOneAndUpdate(
+        { _id: execution._id, status: execution.status, results: { $elemMatch: { clientOrderIndex: parsed.data.clientOrderIndex, status: { $in: ["submitting", "uncertain"] } } } },
+        { $set: { results }, $unset: { activeKey: 1, queueKey: 1, leaseUntil: 1 } },
+        { returnDocument: "after" },
+    );
+    if (!updated) { res.status(409).json({ message: "Order was reconciled by another request; refresh and try again" }); return; }
+    await recordWorkflowAudit(req.userId, execution.workflowId, "execution.reconciled", { executionId: execution._id.toString(), clientOrderIndex: parsed.data.clientOrderIndex, outcome: parsed.data.outcome });
+    res.json({ id: updated._id, status: updated.status, reconciled: true });
 });
 
 app.get("/nodes", async (req, res) => {
@@ -663,6 +770,7 @@ export async function startServer() {
         throw new Error("MONGO_URL, JWT_SECRET, and CREDENTIAL_ENCRYPTION_KEY are required");
     }
     await mongoose.connect(MONGO_URL);
+    await Promise.all([RequestLimitModel.init(), RuntimeControlModel.init(), RuntimeAuditModel.init()]);
     server = app.listen(process.env.PORT || 3000);
     return server;
 }

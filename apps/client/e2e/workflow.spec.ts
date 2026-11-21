@@ -7,7 +7,7 @@ const workflow = {
 };
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('auth_token', 'test-token'));
+  await page.addInitScript(() => sessionStorage.setItem('auth_token', 'test-token'));
   await page.route('http://localhost:3000/**', async (route) => {
     if (route.request().method() === 'OPTIONS') { await route.fulfill({ status: 204 }); return; }
     await route.fulfill({ json: workflow });

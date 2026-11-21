@@ -5,6 +5,7 @@ test('a new user runs a timer-based paper trade without a broker key', async ({ 
   await page.goto('/auth?mode=signup');
   await page.getByPlaceholder('Username').fill(username);
   await page.getByPlaceholder('Password').fill('long-test-password-123');
+  await page.getByPlaceholder('Invitation code').fill('fullstack-test-invitation');
   await page.getByRole('button', { name: 'Sign Up' }).click();
   await expect(page.getByText('Good to see you')).toBeVisible();
   await expect(page.getByText('Paper demo · Ready')).toBeVisible();

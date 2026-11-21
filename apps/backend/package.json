@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "migrate:private-mvp": "bun migrate-private-mvp.ts",
+    "recover:account": "bun recover-account.ts",
     "start": "bun index.ts",
     "check-types": "tsc --noEmit",
     "test": "bun test",

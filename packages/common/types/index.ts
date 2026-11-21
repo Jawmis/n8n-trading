@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { SUPPORTED_ASSETS } from "../metadata";
 
-export const SignupSchema = z.object({ username: z.string().min(3).max(50), password: z.string().min(12).max(256) });
+export const SignupSchema = z.object({ username: z.string().min(3).max(50), password: z.string().min(12).max(256), invitationCode: z.string().min(1).max(256) }).strict();
 export const SigninSchema = z.object({ username: z.string().min(3).max(50), password: z.string().min(1).max(256) });
 
 const PositionSchema = z.object({ x: z.number().finite(), y: z.number().finite() }).strict();

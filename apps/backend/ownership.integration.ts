@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
-import { ExecutionModel, UserModel, WorkflowModel, WorkflowAuditModel } from "db/client";
+import { ExecutionModel, RequestLimitModel, RuntimeAuditModel, RuntimeControlModel, UserModel, WorkflowModel, WorkflowAuditModel } from "db/client";
 import { app } from "./index";
 import { JWT_AUDIENCE, JWT_ISSUER } from "./middleware";
 
@@ -40,7 +40,7 @@ describe("workflow ownership integration", () => {
     if (process.env.RUN_INTEGRATION_TESTS !== "1") return;
     if (!process.env.MONGO_URL) throw new Error("MONGO_URL is required for integration tests");
     await mongoose.connect(process.env.MONGO_URL);
-    await Promise.all([ExecutionModel.init(), UserModel.init()]);
+    await Promise.all([ExecutionModel.init(), RequestLimitModel.init(), UserModel.init()]);
     server = app.listen(0);
   });
 
@@ -105,10 +105,91 @@ describe("workflow ownership integration", () => {
     expect(history.status).toBe(404);
   });
 
+  integrationTest("requires the owner to reconcile an uncertain broker order before releasing its workflow lock", async () => {
+    const clientOrderIndex = 1234567890123;
+    const execution = await ExecutionModel.create({
+      workflowId,
+      kind: "manual",
+      status: "failure",
+      activeKey: workflowId.toString(),
+      queueKey: `${workflowId}:manual`,
+      results: [{ nodeId: "trade", clientOrderIndex, status: "uncertain", error: "Broker outcome is uncertain" }],
+    });
+    const path = `/workflow/executions/${execution._id}/reconcile`;
+    const body = JSON.stringify({ clientOrderIndex, outcome: "accepted", note: "Verified in broker order history" });
+    expect((await request(path, { method: "POST", body }, userB)).status).toBe(404);
+    const reconciled = await request(path, { method: "POST", body }, userA);
+    expect(reconciled.status).toBe(200);
+    const stored = await ExecutionModel.findById(execution._id).lean();
+    expect(stored?.activeKey).toBeUndefined();
+    expect(stored?.queueKey).toBeUndefined();
+    expect((stored?.results as Array<{ status?: string; reconciliation?: { outcome?: string } }>)[0]).toMatchObject({ status: "reconciled", reconciliation: { outcome: "accepted" } });
+    expect((await request(path, { method: "POST", body }, userA)).status).toBe(409);
+  });
+
+  integrationTest("requests cancellation of running work without releasing its overlap lock", async () => {
+    const execution = await ExecutionModel.create({ workflowId, kind: "manual", status: "running", attempt: 1, activeKey: workflowId.toString(), queueKey: `${workflowId}:manual` });
+    const response = await request(`/workflow/executions/${execution._id}/cancel`, { method: "POST" }, userA);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "running", cancellationRequested: true });
+    const stored = await ExecutionModel.findById(execution._id).lean();
+    expect(stored?.cancelRequestedAt).toBeInstanceOf(Date);
+    expect(stored?.activeKey).toBe(workflowId.toString());
+  });
+
   integrationTest("returns 404 for malformed workflow IDs without querying another resource", async () => {
     expect((await request("/workflow/not-an-object-id" as string)).status).toBe(404);
     expect((await request("/workflow/not-an-object-id/execute", { method: "POST" })).status).toBe(404);
     expect((await request("/workflow/executions/not-an-object-id")).status).toBe(404);
+  });
+
+  integrationTest("requires a valid pilot invitation and bounds workflow and credential listings", async () => {
+    const previousInvitation = process.env.SIGNUP_INVITATION_CODE;
+    process.env.SIGNUP_INVITATION_CODE = "integration-pilot-code";
+    const username = `invite-${Date.now()}-${Math.random()}`;
+    const denied = await request("/signup", { method: "POST", body: JSON.stringify({ username, password: "strong-test-password", invitationCode: "wrong" }) });
+    expect(denied.status).toBe(403);
+    const accepted = await request("/signup", { method: "POST", body: JSON.stringify({ username, password: "strong-test-password", invitationCode: "integration-pilot-code" }) });
+    expect(accepted.status).toBe(200);
+    const invited = await UserModel.findOne({ username });
+    expect(invited).toBeTruthy();
+    if (invited) await UserModel.deleteOne({ _id: invited._id });
+    if (previousInvitation === undefined) delete process.env.SIGNUP_INVITATION_CODE;
+    else process.env.SIGNUP_INVITATION_CODE = previousInvitation;
+
+    const workflows = await request("/workflows?page=1&pageSize=1", {}, userB);
+    expect(workflows.status).toBe(200);
+    expect(await workflows.json()).toMatchObject({ page: 1, pageSize: 1, total: 1, totalPages: 1, items: expect.any(Array) });
+    const cappedPage = await request("/credentials?page=1&pageSize=101", {}, userB);
+    expect(cappedPage.status).toBe(200);
+    expect(await cappedPage.json()).toMatchObject({ page: 1, pageSize: 100, items: expect.any(Array) });
+    const credentials = await request("/credentials?page=1&pageSize=25", {}, userB);
+    expect(credentials.status).toBe(200);
+    expect(await credentials.json()).toMatchObject({ page: 1, pageSize: 25, items: expect.any(Array) });
+  });
+
+  integrationTest("operator emergency stop is authorized, shared, and audited", async () => {
+    const previous = process.env.TRADING_OPERATOR_TOKEN;
+    process.env.TRADING_OPERATOR_TOKEN = "integration-operator-token";
+    try {
+      const path = "/operator/trading/kill-switch";
+      const body = JSON.stringify({ enabled: true, reason: "Integration test stop" });
+      expect((await request(path, { method: "POST", body, headers: { authorization: "Bearer wrong" } }, userA)).status).toBe(401);
+      const enabled = await request(path, { method: "POST", body, headers: { authorization: "Bearer integration-operator-token" } }, userA);
+      expect(enabled.status).toBe(200);
+      expect((await RuntimeControlModel.findById("trading").lean())?.killSwitch).toBe(true);
+      expect(await RuntimeAuditModel.countDocuments({ action: "kill_switch.enabled", succeeded: true })).toBeGreaterThan(0);
+      const status = await request("/trading/status", {}, userA);
+      expect(await status.json()).toMatchObject({ killSwitch: true, ready: false });
+      const disabled = await request(path, { method: "POST", body: JSON.stringify({ enabled: false, reason: "Integration test recovery" }), headers: { authorization: "Bearer integration-operator-token" } }, userA);
+      expect(disabled.status).toBe(200);
+      expect((await RuntimeControlModel.findById("trading").lean())?.killSwitch).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.TRADING_OPERATOR_TOKEN;
+      else process.env.TRADING_OPERATOR_TOKEN = previous;
+      await RuntimeControlModel.deleteOne({ _id: "trading" });
+      await RuntimeAuditModel.deleteMany({ reason: { $in: ["Integration test stop", "Integration test recovery"] } });
+    }
   });
 
   integrationTest("keeps credential secrets out of responses and enforces lifecycle ownership", async () => {

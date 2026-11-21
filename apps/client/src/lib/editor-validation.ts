@@ -23,7 +23,7 @@ export function validateEditorNode(kind: NodeKind, metadata: NodeMetadata, crede
     return "Quantity must be greater than zero.";
   }
   if (fields.price !== undefined && (!Number.isFinite(fields.price) || fields.price <= 0)) {
-    return "Limit price must be greater than zero.";
+    return "Slippage guard price must be greater than zero.";
   }
   if (fields.leverage !== undefined && (!Number.isFinite(fields.leverage) || fields.leverage <= 0)) {
     return "Leverage must be greater than zero.";
