@@ -160,8 +160,9 @@ describe("workflow ownership integration", () => {
     const workflows = await request("/workflows?page=1&pageSize=1", {}, userB);
     expect(workflows.status).toBe(200);
     expect(await workflows.json()).toMatchObject({ page: 1, pageSize: 1, total: 1, totalPages: 1, items: expect.any(Array) });
-    const invalidPage = await request("/credentials?page=1&pageSize=101", {}, userB);
-    expect(invalidPage.status).toBe(400);
+    const cappedPage = await request("/credentials?page=1&pageSize=101", {}, userB);
+    expect(cappedPage.status).toBe(200);
+    expect(await cappedPage.json()).toMatchObject({ page: 1, pageSize: 100, items: expect.any(Array) });
     const credentials = await request("/credentials?page=1&pageSize=25", {}, userB);
     expect(credentials.status).toBe(200);
     expect(await credentials.json()).toMatchObject({ page: 1, pageSize: 25, items: expect.any(Array) });
